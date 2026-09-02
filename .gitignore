@@ -1,0 +1,26 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Large Model Weights (YOLO & PyTorch checkpoints)
+models/*.pt
+models/*.onnx
+!models/README.md
+
+# Generated outputs, uploads, and training runs
+static/outputs/*
+static/uploads/*
+!static/outputs/.gitkeep
+!static/uploads/.gitkeep
+static/*.mp4
+static/*.jpg
+runs/
+sample_videos/*.mp4
+
