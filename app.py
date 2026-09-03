@@ -16,6 +16,13 @@ from path_planner import PathPlanner
 
 app = Flask(__name__)
 
+# ASGI wrapper so the app can be run with both 'python app.py' (Flask) and 'uvicorn app:asgi_app' (ASGI)
+try:
+    from asgiref.wsgi import WsgiToAsgi
+    asgi_app = WsgiToAsgi(app)
+except ImportError:
+    asgi_app = app
+
 # Base directories
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "static", "uploads")
