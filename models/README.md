@@ -1,9 +1,11 @@
 # Models Directory
 
-This directory stores trained YOLOv8 and YOLOv8-seg weights:
-- `road_damage_seg_best.pt`: High-accuracy instance segmentation model (6.7 MB)
-- `peterhdd_best.pt`: YOLOv8s bounding box detection model (22.5 MB)
-- `pothole_seg_nano.pt`: Keremberke YOLOv8n segmentation model (6.7 MB)
+This directory houses the perception weights for Project Lumina:
 
-Note: Heavy `.pt` model binaries are ignored by git to keep the repository fast and lightweight.
-The application automatically retrieves or uses locally loaded weights.
+| File | Type | Size | Status | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| **`road_damage_seg_best.pt`** | YOLOv8n-Seg | 6.8 MB | **ACTIVE** | High-precision instance segmentation model trained on asphalt craters, potholes, and road defects. Provides exact polygon contours. |
+
+### Note on Large Files & Git
+Binary `.pt` and `.onnx` checkpoint files are excluded from Git commits via `.gitignore` to keep repository clones fast and lightweight.
+For deployment to AWS EC2 or a Raspberry Pi, transfer `road_damage_seg_best.pt` directly via SCP or AWS S3.
