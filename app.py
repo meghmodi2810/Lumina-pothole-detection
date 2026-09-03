@@ -34,6 +34,26 @@ MODELS_FOLDER = os.path.join(BASE_DIR, "models")
 for folder in [UPLOAD_FOLDER, OUTPUT_FOLDER, SAMPLE_IMG_FOLDER, SAMPLE_VID_FOLDER, MODELS_FOLDER]:
     os.makedirs(folder, exist_ok=True)
 
+def transcode_to_h264(raw_mp4_path, web_mp4_path):
+    """Converts OpenCV mp4v video to HTML5-compatible H.264 using FFmpeg."""
+    import subprocess
+    import time
+    time.sleep(0.25)  # Allow Windows file handle to release
+    cmd = [
+        "ffmpeg", "-y", "-i", str(raw_mp4_path),
+        "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        "-preset", "ultrafast", "-movflags", "+faststart",
+        str(web_mp4_path)
+    ]
+    try:
+        subprocess.run(cmd, check=True, capture_output=True)
+        if os.path.exists(web_mp4_path) and os.path.getsize(web_mp4_path) > 1000:
+            print(f"[FFmpeg] Transcode to H.264 succeeded: {web_mp4_path}")
+            return True
+    except Exception as e:
+        print(f"[FFmpeg] Conversion warning: {e}")
+    return False
+
 # Initialize Perception Engine & Autonomous Path Planner
 engine = PotholeEngine(models_dir=MODELS_FOLDER, default_model="road_damage_seg_best.pt")
 planner = PathPlanner()
@@ -366,6 +386,7 @@ def detect_video_api():
         timestamp = int(time.time() * 1000)
         output_filename = f"processed_video_{timestamp}.mp4"
         output_path = os.path.join(OUTPUT_FOLDER, output_filename)
+        raw_output_path = os.path.join(OUTPUT_FOLDER, f"raw_{output_filename}")
 
         frames_processed = 0
         frames_with_potholes = 0
@@ -375,8 +396,12 @@ def detect_video_api():
 
         start_time = time.time()
 
-        # Process up to 60 frames for snappy web response on CPU
-        max_frames_to_process = min(60, total_frames)
+        # If sample video, start at frame 30 where potholes are visible
+        if "driving_sample" in input_video_path and total_frames > 60:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 30)
+
+        # Process up to 75 frames
+        max_frames_to_process = min(75, total_frames)
         
         # Scale output video to 640 width if original is larger
         if w > 800:
@@ -386,7 +411,7 @@ def detect_video_api():
             out_w, out_h = w, h
 
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(output_path, fourcc, fps, (out_w, out_h))
+        out = cv2.VideoWriter(raw_output_path, fourcc, fps, (out_w, out_h))
 
         while cap.isOpened() and frames_processed < max_frames_to_process:
             ret, frame = cap.read()
@@ -421,6 +446,17 @@ def detect_video_api():
 
         cap.release()
         out.release()
+
+        # Transcode with FFmpeg to H.264 for universal HTML5 browser playback
+        if transcode_to_h264(raw_output_path, output_path):
+            try:
+                os.remove(raw_output_path)
+            except Exception:
+                pass
+        else:
+            # Fallback if ffmpeg is unavailable
+            if os.path.exists(raw_output_path):
+                os.rename(raw_output_path, output_path)
 
         elapsed_sec = round(time.time() - start_time, 2)
         avg_proc_fps = round(frames_processed / max(0.01, elapsed_sec), 1)

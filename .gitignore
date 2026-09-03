@@ -23,4 +23,7 @@ static/*.mp4
 static/*.jpg
 runs/
 sample_videos/*.mp4
+pothole_video/
+*.zip
+
 
