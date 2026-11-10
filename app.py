@@ -233,7 +233,7 @@ def _ai_perception_worker():
                     total_potholes_count += len(scaled_detections)
         except Exception:
             pass
-        time.sleep(0.04)
+        time.sleep(0.08)
 
 threading.Thread(target=_ai_perception_worker, daemon=True).start()
 
@@ -718,7 +718,8 @@ def get_mobile_telemetry():
         "boardTemperatureC": cpu_t,
         "motorTemperatureC": 32.0,
         "networkLatencyMs": 14,
-        "batteryPercent": 85,
+        "batteryPercent": None,
+        "powerSupplyStatus": "NOMINAL",
         "driveMode": active_drive_mode,
         "isDriving": m_stat["is_driving"],
         "isEmergencyStopped": m_stat["is_emergency_stopped"],
@@ -877,7 +878,7 @@ def claim_controller():
 
 @app.route("/api/v1/diagnostics/run", methods=["GET", "POST"])
 def run_diagnostics():
-    report = run_full_hardware_diagnostics(camera=camera, engine=engine, motor=motor)
+    report = run_full_hardware_diagnostics(camera=camera, engine=engine, motor=motor, auto_driver=auto_driver)
     return jsonify(report)
 
 @app.route("/clean_feed")

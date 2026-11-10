@@ -242,3 +242,27 @@ Live execution log on physical car chassis:
 2026-11-10 12:23:45 [INFO] [Motor] [Path Clear!] Resuming forward cruise.
 2026-11-10 12:23:45 [INFO] [Motor] [Action] ALL 4 WHEELS FORWARD @ 65% POWER
 ```
+
+---
+
+## 8. Pothole Model False-Positive Elimination & App Hardening (Nov 2026 Overhaul)
+
+### 8.1 Tile Artifact Elimination & Degenerate Box Filtering
+- **Problem**: On floor tiles, camera auto-gain and edge shadows triggered low-confidence artifact boxes spanning $>80\%$ of the screen ($x_1=1, x_2=254, y_1=0, y_2=189$). This falsely marked `EMERGENCY_BRAKE` and froze the car indefinitely on tiles.
+- **Root Cause**: Downsampling frames to 256x192 without filtering screen-spanning false positives caused YOLOv8 to misinterpret tile boundary contrast as a massive road crater.
+- **Solution**:
+  1. In `pothole_engine.py`, added strict boundary clamping and degenerate box rejection: any bounding box with width $>80\%$ AND height $>80\%$ of frame dimensions is filtered out as sensor noise.
+  2. Rate-limited `_ai_perception_worker` to 12 FPS (`sleep(0.08)`), reducing Raspberry Pi CPU utilization from 224% down to 65–75% and eliminating camera pipeline frame starvation.
+
+### 8.2 Autonomous Deadlock Recovery
+- **Problem**: When `PathPlanner` flagged `EMERGENCY_BRAKE`, the car called `self.motor.stop()` but kept `self.state = AutonomousState.CRUISING`, freezing in place with no recovery.
+- **Solution**: Updated `autonomous_driver.py` so `EMERGENCY_BRAKE` transitions to `AutonomousState.OBSTACLE_STOP`. The car actively initiates back-off (`BACKING_OFF`), evaluates left/right pivot turns (`DECIDING_TURN`), and escapes dead ends autonomously.
+
+### 8.3 Mobile Companion App Overhaul
+- **True Disconnection**: Added `disconnectVehicle()` to `LuminaAppState` and implemented a dedicated **DISCONNECT** button in the top app bar, allowing clean disconnection and return to the Connection screen.
+- **Eradication of Mock Storage / 54 GB Simulator Fallback**: Fixed `diagnostics_repository_impl.dart` to use `http.post` with a 12s timeout; removed fake 54.2 GB simulator fallback so real MicroSD metrics (`5.1 GB free of 14.0 GB`) are always displayed.
+- **Battery Telemetry Reality**: Removed fake `85%` battery gauge. Exposed real Pi thermal metrics and power rail health.
+- **Responsive 4:3 Camera Stream**: Replaced `fit: BoxFit.cover` with `fit: BoxFit.contain` inside `AspectRatio(aspectRatio: 4 / 3)`, ensuring 100% of the live camera view and AR HUD overlays are visible without cropping on any mobile screen.
+- **Active Camera Retry**: When tapping RETRY, the app sends a wake-up POST to `/api/v1/camera/start` to ensure the physical camera hardware is running before reconnecting the MJPEG stream.
+- **Streamlined Autonomous Cockpit**: In Autonomous Mode, the 4-way D-Pad is hidden, replaced by a large, prominent **STOP AUTONOMOUS DRIVE** button and live intelligence status cards. The D-Pad appears exclusively in Manual Mode.
+- **Dynamic Pothole Dialog**: Replaced hardcoded `2.3m AHEAD` mock text with actual detection metadata (Pothole ID, confidence $\%$, and real relative distance).

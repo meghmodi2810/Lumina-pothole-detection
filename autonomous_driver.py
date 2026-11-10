@@ -299,8 +299,9 @@ class AutonomousDriver:
                         evasion_mode = ai_plan.get("evasion_mode", "CENTER_TRACKING")
 
                         if evasion_mode == "EMERGENCY_BRAKE":
-                            logger.info("[Vision Hazard] Lane-spanning crater detected! Halting vehicle.")
+                            logger.info("[Vision Hazard] Lane-spanning crater detected! Stopping to calculate alternative path.")
                             self.motor.stop()
+                            self.state = AutonomousState.OBSTACLE_STOP
                             time.sleep(0.1)
                         elif evasion_mode in ("EVADE_LEFT", "EVADE_RIGHT"):
                             steer = float(ai_plan.get("steering", 0.0))

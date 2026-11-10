@@ -146,7 +146,13 @@ class PotholeEngine:
                 # Boundary clamping
                 x1, y1 = max(0, coords[0]), max(0, coords[1])
                 x2, y2 = min(w, coords[2]), min(h, coords[3])
-                if x2 - x1 <= 4 or y2 - y1 <= 4:
+                bw = x2 - x1
+                bh = y2 - y1
+                if bw <= 4 or bh <= 4:
+                    continue
+
+                # Reject screen-spanning false positives (sensor noise/flicker spanning >80% of entire frame)
+                if bw >= int(w * 0.80) and bh >= int(h * 0.80):
                     continue
 
                 mask_contour = None

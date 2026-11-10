@@ -84,11 +84,24 @@ def check_sd_storage(mount_path="/", min_free_mb=STORAGE_MIN_FREE_MB):
         }
 
 
-def check_ultrasonic_sensor(trig_pin=ULTRASONIC_TRIG, echo_pin=ULTRASONIC_ECHO, timeout=0.06):
+def check_ultrasonic_sensor(trig_pin=ULTRASONIC_TRIG, echo_pin=ULTRASONIC_ECHO, timeout=0.065, auto_driver=None):
     """
     Physically tests the HC-SR04 ultrasonic distance sensor.
     Pins verified on Lumina-01 hardware: TRIG=16, ECHO=26.
     """
+    # 1. If auto_driver instance is provided, use its safe, locked distance sampler
+    if auto_driver is not None:
+        try:
+            d = auto_driver.read_distance()
+            if d is not None:
+                return {
+                    "subsystem": "ULTRASONIC",
+                    "status": "PASS",
+                    "details": f"HC-SR04 Ultrasonic sensor verified on TRIG={trig_pin}, ECHO={echo_pin}: clearance {d:.1f} cm"
+                }
+        except Exception:
+            pass
+
     try:
         import RPi.GPIO as GPIO
         GPIO.setmode(GPIO.BCM)
@@ -341,7 +354,7 @@ def glow_green_led(pin=GREEN_LED_PIN, duration_sec=3.0):
     return thread
 
 
-def run_full_hardware_diagnostics(camera=None, engine=None, motor=None):
+def run_full_hardware_diagnostics(camera=None, engine=None, motor=None, auto_driver=None):
     """
     Executes the 5 required hardware startup checks:
     1. SD card storage
@@ -358,7 +371,7 @@ def run_full_hardware_diagnostics(camera=None, engine=None, motor=None):
     results.append(check_sd_storage())
 
     # 2. Ultrasonic Sensor (HC-SR04)
-    results.append(check_ultrasonic_sensor())
+    results.append(check_ultrasonic_sensor(auto_driver=auto_driver))
 
     # 3. Camera
     results.append(check_camera_sensor(camera=camera))
