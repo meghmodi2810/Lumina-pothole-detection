@@ -258,5 +258,23 @@ Real-time multipart MJPEG stream rendering live detection polygons, bounding box
 
 ---
 
-## 8. License
+## 8. Autonomous Navigation & Hardware Diagnostics
+
+For full documentation on the physical edge car architecture, see [AUTONOMOUS_HARDWARE_INTEGRATION_README.md](AUTONOMOUS_HARDWARE_INTEGRATION_README.md).
+
+### 8.1 Hardware Startup Diagnostics (`/api/v1/diagnostics/run`)
+- Checks MicroSD storage health (`shutil.disk_usage`), HC-SR04 sonar responsiveness (TRIG=16, ECHO=26), CSI camera capture (`picamera2`), YOLOv8 model residency in RAM, and SoC thermal ceiling (< 80°C).
+- On all checks passing, pulses the **Green Status LED on GPIO 5 for 3.0 seconds**.
+- Surfaces actionable subsystem failure diagnostics if any sensor or bus is degraded.
+
+### 8.2 Closed-Loop Autonomous Driving (`/api/v1/vehicle/mode`)
+- **Situation A (Clear Path)**: Cruises forward at calibrated 65% PWM duty cycle.
+- **Situation B (Obstacle Detected)**: Immediate motor halt when distance $\le 28.0\text{ cm}$.
+- **Situation C (Intelligent Evasion)**: Backs up 0.35s if close ($< 18.0\text{ cm}$), adaptively picks turn direction avoiding repetitive loops, and verifies clearance $\ge 35.0\text{ cm}$.
+- **Situation D (Trapped / Blocked)**: Halts in `BLOCKED_WAITING` after 4 failed turns, resuming automatically when path clears.
+- **Brownout Protection**: Modulates hardware PWM on `ENA` (GPIO 18) and `ENB` (GPIO 12), preventing high-current battery drops and Pi reboots.
+
+---
+
+## 9. License
 This project is licensed under the MIT License.
