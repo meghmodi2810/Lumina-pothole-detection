@@ -64,31 +64,32 @@ class PathPlanner:
                     critical_hazards.append(det)
 
         if hazard_detected and critical_hazards:
-            # Check for lane-spanning or multiple opposing obstacles
             primary = critical_hazards[0]
             w_norm = primary.get('width_norm', 0.0)
             xc, yc = primary.get('centroid_norm', [0.5, 0.0])
+            conf = primary.get('confidence', 0.5)
 
-            # Condition 1: Lane-spanning hazard (w > 0.55 or multiple holes blocking both sides)
-            left_blocked = any(d['centroid_norm'][0] < 0.50 for d in critical_hazards)
-            right_blocked = any(d['centroid_norm'][0] >= 0.50 for d in critical_hazards)
-            
-            if w_norm >= 0.55 or (left_blocked and right_blocked and len(critical_hazards) >= 2):
+            # Check if road is truly impassable right in front of bumper (yc >= 0.75)
+            severe_left = any(d.get('centroid_norm', [0.5, 0.0])[0] < 0.48 and d.get('centroid_norm', [0.5, 0.0])[1] >= 0.72 for d in critical_hazards)
+            severe_right = any(d.get('centroid_norm', [0.5, 0.0])[0] >= 0.52 and d.get('centroid_norm', [0.5, 0.0])[1] >= 0.72 for d in critical_hazards)
+
+            # Emergency brake ONLY for genuine impassable blockage right in front of bumper
+            if (w_norm >= 0.85 and yc >= 0.75 and conf >= 0.65) or (severe_left and severe_right and len(critical_hazards) >= 2):
                 evasion_mode = "EMERGENCY_BRAKE"
                 evasion_offset = 0.0
                 final_throttle = 0
                 warning_level = "RED"
             elif xc < 0.50:
-                # Pothole on left side -> steer right (+0.35 offset) and decelerate by 30%
+                # Pothole on left side -> steer right (+0.35 offset) and regulate throttle
                 evasion_mode = "EVADE_RIGHT"
                 evasion_offset = +0.35
-                final_throttle = int(base_throttle * 0.70)
+                final_throttle = int(base_throttle * 0.75)
                 warning_level = "AMBER"
             else:
-                # Pothole on right side -> steer left (-0.35 offset) and decelerate by 30%
+                # Pothole on right side or center -> steer left (-0.35 offset) and regulate throttle
                 evasion_mode = "EVADE_LEFT"
                 evasion_offset = -0.35
-                final_throttle = int(base_throttle * 0.70)
+                final_throttle = int(base_throttle * 0.75)
                 warning_level = "AMBER"
 
         target_steering = max(-1.0, min(1.0, base_steering + evasion_offset))

@@ -131,8 +131,14 @@ Implemented in `path_planner.py` following Section 4.3 of the PRD:
 Project Lumina/
 │
 ├── app.py                       # Vision server, MJPEG streaming & FFmpeg H.264 engine
-├── pothole_engine.py            # Perception core: segmentation, box fusion, temporal tracking
+├── autonomous_driver.py         # Multi-state closed-loop autonomous driving engine
+├── diagnostics_engine.py        # Active hardware startup self-test & status LED engine
 ├── path_planner.py              # Avoidance arbitrator & dynamic AR trajectory renderer
+├── pothole_engine.py            # Perception core: segmentation, box fusion, temporal tracking
+├── motor_controller.py          # 4WD L298N motor driver with hardware PWM & watchdog
+├── test_model_guided_driving.py # Verification suite for autonomous and manual model guidance
+├── test_autonomous_driver.py    # Unit tests for autonomous driving state machine
+├── AUTONOMOUS_HARDWARE_INTEGRATION_README.md # Detailed edge integration & model profiling artifact
 ├── pothole_detector.py          # Backward-compatibility API wrapper
 ├── train.py                     # Custom fine-tuning script with vehicular augmentations
 ├── export_onnx.py               # ONNX exporter with graph simplification

@@ -165,9 +165,10 @@ camera.start(mode="webcam")
 latest_ai_detections = []
 latest_ai_plan = planner.plan([])
 ai_lock = threading.Lock()
+last_pothole_log_time = 0.0
 
 def _ai_perception_worker():
-    global latest_ai_detections, latest_ai_plan
+    global latest_ai_detections, latest_ai_plan, last_pothole_log_time, total_potholes_count
     try:
         import torch
         torch.set_num_threads(4)
@@ -216,21 +217,26 @@ def _ai_perception_worker():
             with ai_lock:
                 latest_ai_detections = scaled_detections
                 latest_ai_plan = plan
-                if scaled_detections:
+                now = time.time()
+                # Debounced pothole recording: log at most once per 2 seconds to eliminate duplicate spam
+                if scaled_detections and (now - last_pothole_log_time >= 2.0):
+                    last_pothole_log_time = now
                     for det in scaled_detections:
-                        recent_detected_potholes.insert(0, {
-                            "id": f"POT-{int(time.time()*1000)%100000}",
-                            "timestamp": int(time.time() * 1000),
-                            "severity": det.get("severity", "MODERATE").upper(),
-                            "confidence": round(float(det.get("confidence", 0.8)), 2),
-                            "estimatedAreaM2": 0.42,
-                            "depthEstimateCm": 4.5,
-                            "avoidanceAction": plan.get("evasion_mode", "CENTER_TRACKING"),
-                            "isHazard": True
-                        })
+                        conf = float(det.get("confidence", 0.8))
+                        if conf >= 0.40:
+                            recent_detected_potholes.insert(0, {
+                                "id": f"POT-{int(now*1000)%100000}",
+                                "timestamp": int(now * 1000),
+                                "severity": det.get("severity", "MODERATE").upper(),
+                                "confidence": round(conf, 2),
+                                "estimatedAreaM2": round(float(det.get("width_norm", 0.3) * det.get("height_norm", 0.2) * 1.5), 2),
+                                "depthEstimateCm": 4.5,
+                                "avoidanceAction": plan.get("evasion_mode", "CENTER_TRACKING"),
+                                "isHazard": True
+                            })
                     if len(recent_detected_potholes) > 20:
                         del recent_detected_potholes[20:]
-                    total_potholes_count += len(scaled_detections)
+                    total_potholes_count += len([d for d in scaled_detections if float(d.get("confidence", 0.8)) >= 0.40])
         except Exception:
             pass
         time.sleep(0.08)
@@ -658,6 +664,7 @@ def add_cors_headers(response):
     return response
 
 @app.route("/api/v1/vehicle/health", methods=["GET"])
+@app.route("/api/v1/health", methods=["GET"])
 @app.route("/api/health", methods=["GET"])
 def get_vehicle_health():
     cpu_t = get_pi_cpu_temp()
@@ -766,6 +773,117 @@ def start_discovery_responder():
 
 start_discovery_responder()
 
+def apply_model_guidance_to_manual_command(steering=0.0, throttle=0.0, action=None, speed=100.0):
+    """
+    Applies the YOLOv8-seg pothole perception model to manual driver commands (ADAS / Active Avoidance).
+    Implements PRD Section 4.3 & 5.3:
+    - If user drives forward towards a detected pothole:
+      * Evaluates lateral trajectory deviation and danger corridor.
+      * If EMERGENCY_BRAKE (lane-spanning crater or multi-hazard): stops motors and prevents collision.
+      * If EVADE_LEFT / EVADE_RIGHT: blends user steering with model avoidance offset and modulates throttle by -30%.
+    - If user drives backward (reversing out of hazard): allows direct manual movement without forward restriction.
+    - If user steers/turns: blends avoidance offset to steer clear of hazard rims.
+    """
+    with ai_lock:
+        dets = list(latest_ai_detections)
+
+    # 1. Handle discrete action mapping
+    if action:
+        act = str(action).lower()
+        if act == "stop":
+            motor.stop()
+            return {"action": "stop", "assisted": False, "evasion_mode": "STOP", "steering": 0.0, "throttle": 0.0}
+        elif act == "backward":
+            if motor.is_emergency_stopped:
+                motor.release_emergency_stop()
+            motor.backward(speed)
+            return {"action": "backward", "assisted": False, "evasion_mode": "REVERSE_CLEAR", "steering": 0.0, "throttle": -speed / 100.0}
+        elif act == "left":
+            if motor.is_emergency_stopped:
+                motor.release_emergency_stop()
+            motor.left(speed)
+            return {"action": "left", "assisted": False, "evasion_mode": "MANUAL_TURN", "steering": -1.0, "throttle": 0.0}
+        elif act == "right":
+            if motor.is_emergency_stopped:
+                motor.release_emergency_stop()
+            motor.right(speed)
+            return {"action": "right", "assisted": False, "evasion_mode": "MANUAL_TURN", "steering": 1.0, "throttle": 0.0}
+        elif act == "forward":
+            steering = 0.0
+            throttle = speed / 100.0
+
+    # 2. Handle proportional control
+    if throttle > 0.05:
+        if motor.is_emergency_stopped:
+            motor.release_emergency_stop()
+
+        # Query PathPlanner using driver's requested steering & throttle
+        plan = planner.plan(dets, base_steering=steering, base_throttle=int(throttle * 100.0))
+        evasion_mode = plan.get("evasion_mode", "CENTER_TRACKING")
+        hazard_detected = plan.get("hazard_detected", False)
+
+        if hazard_detected and evasion_mode == "EMERGENCY_BRAKE":
+            motor.stop()
+            return {
+                "action": "emergency_halt",
+                "assisted": True,
+                "hazard_detected": True,
+                "evasion_mode": "EMERGENCY_BRAKE",
+                "warning_level": "RED",
+                "reason": "AI Model detected road crater blocking entire forward corridor",
+                "steering": 0.0,
+                "throttle": 0.0
+            }
+        elif hazard_detected and evasion_mode in ("EVADE_LEFT", "EVADE_RIGHT"):
+            assisted_steer = plan.get("steering", steering)
+            assisted_throttle = (plan.get("throttle", int(throttle * 100.0))) / 100.0
+            motor.set_drive_command(assisted_steer, assisted_throttle)
+            return {
+                "action": "assisted_forward",
+                "assisted": True,
+                "hazard_detected": True,
+                "evasion_mode": evasion_mode,
+                "warning_level": "AMBER",
+                "steering": assisted_steer,
+                "throttle": assisted_throttle
+            }
+        else:
+            motor.set_drive_command(steering, throttle)
+            return {
+                "action": "direct_forward",
+                "assisted": False,
+                "hazard_detected": False,
+                "evasion_mode": "CENTER_TRACKING",
+                "warning_level": "GREEN",
+                "steering": steering,
+                "throttle": throttle
+            }
+    elif throttle < -0.05:
+        if motor.is_emergency_stopped:
+            motor.release_emergency_stop()
+        motor.set_drive_command(steering, throttle)
+        return {
+            "action": "direct_reverse",
+            "assisted": False,
+            "hazard_detected": False,
+            "evasion_mode": "REVERSE",
+            "steering": steering,
+            "throttle": throttle
+        }
+    else:
+        if abs(steering) > 0.05:
+            motor.set_drive_command(steering, 0.0)
+        else:
+            motor.stop()
+        return {
+            "action": "stop",
+            "assisted": False,
+            "hazard_detected": False,
+            "evasion_mode": "IDLE",
+            "steering": steering,
+            "throttle": 0.0
+        }
+
 @app.route("/api/v1/control", methods=["POST"])
 @app.route("/api/drive", methods=["POST"])
 def post_manual_control():
@@ -776,29 +894,40 @@ def post_manual_control():
     action = data.get("action") or control.get("action")
     if action:
         speed = data.get("speed") or control.get("speed") or 100.0
-        if str(action).lower() != "stop" and motor.is_emergency_stopped:
-            motor.release_emergency_stop()
-        motor.execute_action(str(action), float(speed))
-        return jsonify({"success": True, "action": str(action), "status": motor.get_status()})
+        res = apply_model_guidance_to_manual_command(action=str(action), speed=float(speed))
+        return jsonify({
+            "success": True,
+            "action": str(action),
+            "guidance": res,
+            "status": motor.get_status()
+        })
 
     # 2. Proportional steering & throttle
     steering = float(control.get("steering", 0.0))
     throttle = float(control.get("throttle", 0.0))
 
     if active_drive_mode == "manual":
-        if abs(throttle) > 0.1 and motor.is_emergency_stopped:
-            motor.release_emergency_stop()
-        motor.set_drive_command(steering, throttle)
+        res = apply_model_guidance_to_manual_command(steering=steering, throttle=throttle)
+        return jsonify({
+            "success": True,
+            "steering": res.get("steering", steering),
+            "throttle": res.get("throttle", throttle),
+            "guidance": res,
+            "status": motor.get_status()
+        })
 
     return jsonify({"success": True, "steering": steering, "throttle": throttle, "status": motor.get_status()})
 
 @app.route("/api/v1/control/<action>", methods=["GET", "POST"])
 def handle_action_control(action):
     speed = request.args.get("speed", default=100.0, type=float)
-    if str(action).lower() != "stop" and motor.is_emergency_stopped:
-        motor.release_emergency_stop()
-    motor.execute_action(str(action), speed)
-    return jsonify({"success": True, "action": str(action), "status": motor.get_status()})
+    res = apply_model_guidance_to_manual_command(action=str(action), speed=speed)
+    return jsonify({
+        "success": True,
+        "action": str(action),
+        "guidance": res,
+        "status": motor.get_status()
+    })
 
 @app.route("/api/v1/vehicle/start", methods=["POST"])
 def start_vehicle():
