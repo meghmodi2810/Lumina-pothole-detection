@@ -333,3 +333,30 @@ Both test suites pass on the physical Raspberry Pi 4B:
 * `test_model_guided_driving.py`: **7/7 tests pass** (`Ran 7 tests in 0.122s — OK`).
 * `test_autonomous_driver.py`: **7/7 tests pass** (`Ran 7 tests in 1.388s — OK`).
 * Live Server Status: `lumina-car.service` active and healthy at `http://10.40.110.31:5000`.
+
+---
+
+## 10. Resolution of Startup Self-Test mDNS `errno = 7` (EAI_NODATA) & Live Car Binding
+
+### 10.1 Root Cause of `errno = 7` & "HARDWARE FAULT: 1 COMPONENT FAILED CHECK"
+- **The Symptom**: When tapping into the Startup Self-Test screen, the interface turned completely red, reporting:
+  `HARDWARE FAULT: 1 COMPONENT FAILED CHECK • Failed to complete live hardware self-test: ClientException with SocketException: Failed host lookup: 'lumina-01.local' (OS Error: No address associated with hostname, errno = 7), uri = http://lumina-01.local:8080/api/v1/diagnostics/run`
+- **Technical Explanation**:
+  1. `errno = 7` in Android Bionic libc is `EAI_NODATA` (`No address associated with nodename`). Android unicast DNS does not resolve `.local` mDNS domains out-of-the-box.
+  2. `main.dart` initialized `EnvironmentConfig.development(useSimulator: true)`.
+  3. `VehicleRepositoryImpl.connect()` had a fallback `if (config.useEmbeddedSimulator || ...)` that unconditionally marked `_isLive = false`.
+  4. When `_isLive = false`, `activeHost` defaulted to `config.vehicleHost`, which was hardcoded to `http://lumina-01.local:8080`.
+  5. The live Raspberry Pi hardware was already 100% healthy at `http://10.40.110.31:5000`, but the app was querying a non-existent mDNS hostname, throwing raw SocketExceptions onto the UI.
+
+### 10.2 Architectural Fixes Applied
+1. **Target Live Hardware by Default**:
+   - Updated `main.dart` to initialize with `EnvironmentConfig.development(customVehicleHost: 'http://10.40.110.31:5000', useSimulator: false)`.
+   - Updated `VehicleRepositoryImpl.activeHost` to always resolve to concrete IP addresses (`http://10.40.110.31:5000`), completely eliminating `lumina-01.local` fallbacks.
+2. **Android mDNS Sanitization**:
+   - In `VehicleLiveSource.configureHost()`, if any `.local` hostname (`raspberrypi.local` or `lumina-01.local`) is entered, it automatically maps to the verified physical IP `10.40.110.31`.
+3. **User-Friendly Error Sanitization**:
+   - In `DiagnosticsRepositoryImpl`, caught exceptions are parsed into clear, actionable advice rather than raw Bionic libc error codes (`errno = 7`).
+4. **Diagnostic Screen Recovery Action**:
+   - Added an immediate **[ CHANGE IP ]** button to `StartupSelfTestScreen`, allowing the operator to jump back to the connection screen and verify the vehicle IP with zero friction if network conditions ever drop.
+5. **Real Hardware Status**:
+   - `POST /api/v1/diagnostics/run` on `10.40.110.31:5000` returns `200 OK` with **7/7 REAL PHYSICAL CHECKS PASSING** (Storage, Ultrasonic ping 67.2 cm, Camera CSI 640x480, YOLOv8 model, CPU temp 41.4°C, Motor Driver, and Wi-Fi link). Green status LED on GPIO 5 flashes for 3.0 seconds.
