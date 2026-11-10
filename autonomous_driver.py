@@ -52,6 +52,7 @@ class AutonomousDriver:
     def __init__(
         self,
         motor_controller,
+        plan_provider=None,
         trig_pin=DEFAULT_TRIG_PIN,
         echo_pin=DEFAULT_ECHO_PIN,
         stop_dist_cm=DEFAULT_STOP_DISTANCE_CM,
@@ -66,6 +67,7 @@ class AutonomousDriver:
         is_simulation=False
     ):
         self.motor = motor_controller
+        self.plan_provider = plan_provider
         self.trig_pin = trig_pin
         self.echo_pin = echo_pin
 
@@ -288,16 +290,32 @@ class AutonomousDriver:
                 current_dist = dist if dist is not None else 400.0
 
                 # -------------------------------------------------------------
-                # SITUATION A: CLEAR PATH (Cruise Forward)
+                # SITUATION A: CLEAR PATH (Vision Routing + Forward Cruise)
                 # -------------------------------------------------------------
                 if self.state == AutonomousState.CRUISING:
                     if current_dist > self.stop_dist_cm:
-                        # Path is clear: smoothly advance forward
-                        self.motor.forward(self.cruise_speed)
+                        # 1. Query AI vision model & path planner for road hazard routing
+                        ai_plan = self.plan_provider() if callable(self.plan_provider) else {}
+                        evasion_mode = ai_plan.get("evasion_mode", "CENTER_TRACKING")
+
+                        if evasion_mode == "EMERGENCY_BRAKE":
+                            logger.info("[Vision Hazard] Lane-spanning crater detected! Halting vehicle.")
+                            self.motor.stop()
+                            time.sleep(0.1)
+                        elif evasion_mode in ("EVADE_LEFT", "EVADE_RIGHT"):
+                            steer = float(ai_plan.get("steering", 0.0))
+                            throttle_norm = (self.cruise_speed * 0.70) / 100.0
+                            logger.info(f"[Vision Evasion] Routing around pothole: {evasion_mode} (steer={steer:+.2f})")
+                            self.motor.set_drive_command(steer, throttle_norm)
+                            time.sleep(0.06)
+                        else:
+                            # Path is clear: drive straight ahead
+                            self.motor.set_drive_command(0.0, self.cruise_speed / 100.0)
+                            time.sleep(0.06)
+
                         # Reset avoidance attempts on sustained clear path
                         if current_dist > self.clear_dist_cm:
                             self.avoidance_attempts = 0
-                        time.sleep(0.06)
                     else:
                         # ---------------------------------------------------------
                         # SITUATION B: OBSTACLE DETECTED -> IMMEDIATE STOP

@@ -23,6 +23,9 @@ class MockMotor:
     def stop(self):
         self.calls.append(("stop", None))
 
+    def set_drive_command(self, steering, throttle):
+        self.calls.append(("set_drive_command", (steering, throttle)))
+
     def emergency_stop(self):
         self.is_emergency_stopped = True
         self.calls.append(("emergency_stop", None))
@@ -67,8 +70,23 @@ class TestAutonomousDriver(unittest.TestCase):
         self.driver.stop()
 
         self.assertEqual(self.driver.state, AutonomousState.IDLE)
-        forward_calls = [c for c in self.motor.calls if c[0] == "forward"]
-        self.assertGreater(len(forward_calls), 0)
+        drive_calls = [c for c in self.motor.calls if c[0] in ("forward", "set_drive_command")]
+        self.assertGreater(len(drive_calls), 0)
+
+    def test_situation_a_vision_pothole_evasion(self):
+        # When vision model returns EVADE_RIGHT (+0.35 steering), driver steers around pothole
+        fake_plan = {"evasion_mode": "EVADE_RIGHT", "steering": 0.35, "throttle": 31}
+        self.driver.plan_provider = lambda: fake_plan
+        self.driver._sim_distance = 55.0
+        self.driver.start()
+        time.sleep(0.15)
+        self.driver.stop()
+
+        cmd_calls = [c for c in self.motor.calls if c[0] == "set_drive_command"]
+        self.assertGreater(len(cmd_calls), 0)
+        # Check steering passed is +0.35
+        last_steer = cmd_calls[-1][1][0]
+        self.assertEqual(last_steer, 0.35)
 
     def test_situation_b_and_c_obstacle_avoidance(self):
         # Start clear, then introduce obstacle at 15cm (should stop and reverse)
@@ -78,11 +96,11 @@ class TestAutonomousDriver(unittest.TestCase):
 
         # Trigger obstacle
         self.driver._sim_distance = 15.0
-        time.sleep(0.25)
+        time.sleep(0.35)
         self.driver.stop()
 
         actions = [c[0] for c in self.motor.calls]
-        self.assertIn("forward", actions)
+        self.assertTrue(("forward" in actions) or ("set_drive_command" in actions))
         self.assertIn("stop", actions)
         self.assertIn("backward", actions)
 

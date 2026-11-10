@@ -216,6 +216,21 @@ def _ai_perception_worker():
             with ai_lock:
                 latest_ai_detections = scaled_detections
                 latest_ai_plan = plan
+                if scaled_detections:
+                    for det in scaled_detections:
+                        recent_detected_potholes.insert(0, {
+                            "id": f"POT-{int(time.time()*1000)%100000}",
+                            "timestamp": int(time.time() * 1000),
+                            "severity": det.get("severity", "MODERATE").upper(),
+                            "confidence": round(float(det.get("confidence", 0.8)), 2),
+                            "estimatedAreaM2": 0.42,
+                            "depthEstimateCm": 4.5,
+                            "avoidanceAction": plan.get("evasion_mode", "CENTER_TRACKING"),
+                            "isHazard": True
+                        })
+                    if len(recent_detected_potholes) > 20:
+                        del recent_detected_potholes[20:]
+                    total_potholes_count += len(scaled_detections)
         except Exception:
             pass
         time.sleep(0.04)
@@ -603,9 +618,14 @@ motor = MotorController(
     watchdog_timeout_sec=0.6
 )
 
-# Autonomous Driving & Intelligent Obstacle Avoidance Engine
+def get_current_ai_plan():
+    with ai_lock:
+        return dict(latest_ai_plan)
+
+# Autonomous Driving & Intelligent Obstacle Avoidance Engine (Fused AI Vision + Ultrasonic Safety)
 auto_driver = AutonomousDriver(
     motor_controller=motor,
+    plan_provider=get_current_ai_plan,
     trig_pin=16,
     echo_pin=26,
     stop_dist_cm=28.0,
@@ -668,11 +688,12 @@ def get_mobile_telemetry():
     speed_est = round((m_stat["left_pwm_pct"] + m_stat["right_pwm_pct"]) / 20.0 * 2.5, 1) if m_stat["is_driving"] else 0.0
     odometer_distance_m += (speed_est / 3.6) * 0.15
 
-    latest_pot = recent_detected_potholes[0] if recent_detected_potholes else None
+    with ai_lock:
+        latest_pot = recent_detected_potholes[0] if recent_detected_potholes else None
+        tot_potholes = total_potholes_count
+        ai_p = dict(latest_ai_plan)
 
     auto_stat = auto_driver.get_telemetry()
-    evasion_mode = camera.latest_telemetry.get("evasion_mode", "CENTER_TRACKING")
-    warning_level = camera.latest_telemetry.get("warning_level", "GREEN")
 
     if active_drive_mode == "autonomous":
         if auto_stat["state"] in ("OBSTACLE_STOP", "BACKING_OFF", "BLOCKED_WAITING"):
@@ -682,11 +703,12 @@ def get_mobile_telemetry():
             evasion_mode = "PATH_ADJUSTED"
             warning_level = "YELLOW"
         else:
-            evasion_mode = "CENTER_TRACKING"
-            warning_level = "GREEN"
+            # Active vision-guided pothole evasion mode from YOLOv8 perception
+            evasion_mode = ai_p.get("evasion_mode", "CENTER_TRACKING")
+            warning_level = ai_p.get("warning_level", "GREEN")
     else:
-        evasion_mode = "CENTER_TRACKING"
-        warning_level = "GREEN"
+        evasion_mode = ai_p.get("evasion_mode", "CENTER_TRACKING")
+        warning_level = ai_p.get("warning_level", "GREEN")
 
     return jsonify({
         "vehicleId": "LUMINA-01",

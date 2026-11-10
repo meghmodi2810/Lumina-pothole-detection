@@ -230,13 +230,14 @@ class MotorController:
 
             self.is_driving = True
 
-            # Full speed differential drive
+            # Calibrated differential drive speed based on throttle
+            base_speed = max(20.0, min(100.0, abs(throttle) * 100.0))
             if steering >= 0:
-                left_speed = 100.0
-                right_speed = max(0.0, 100.0 * (1.0 - 0.70 * steering))
+                left_speed = base_speed
+                right_speed = max(0.0, base_speed * (1.0 - 0.70 * steering))
             else:
-                left_speed = max(0.0, 100.0 * (1.0 - 0.70 * abs(steering)))
-                right_speed = 100.0
+                left_speed = max(0.0, base_speed * (1.0 - 0.70 * abs(steering)))
+                right_speed = base_speed
 
             is_forward = throttle >= 0
             if is_forward:
