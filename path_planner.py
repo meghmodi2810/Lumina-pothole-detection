@@ -7,7 +7,10 @@ Implements PRD Section 4.3 & Section 5.3:
 - Renders dynamic augmented reality (AR) trajectory curves and HUD instruments.
 """
 
-import cv2
+try:
+    import cv2
+except ImportError:
+    cv2 = None
 import numpy as np
 
 class PathPlanner:
@@ -118,6 +121,8 @@ class PathPlanner:
         - Warning level banner.
         """
         h, w = img.shape[:2]
+        if cv2 is None:
+            return img
         hud_img = img.copy()
 
         # 1. Render Dynamic Augmented Reality Trajectory Ribbon

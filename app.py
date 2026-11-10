@@ -732,6 +732,7 @@ def get_mobile_telemetry():
         "driveMode": active_drive_mode,
         "isDriving": m_stat["is_driving"],
         "isEmergencyStopped": m_stat["is_emergency_stopped"],
+        "action": m_stat["current_action"],
         "steering": m_stat["current_steering"],
         "throttle": m_stat["current_throttle"],
         "leftPwm": m_stat["left_pwm_pct"],

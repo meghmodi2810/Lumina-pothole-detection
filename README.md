@@ -286,6 +286,14 @@ For full documentation on the physical edge car architecture, see [AUTONOMOUS_HA
 - **Situation D (Trapped / Blocked)**: Halts in `BLOCKED_WAITING` after 5 failed turns, resuming automatically when path clears or immediately upon tapping Resume in the mobile app.
 - **Brownout Protection & Stiction Buster**: Modulates hardware PWM on `ENA` (GPIO 18) and `ENB` (GPIO 12), ensuring differential inner wheels never drop below 35% PWM during active turns.
 
+### 8.3 Automated Verification & Soak Testing Suite
+Comprehensive automated testing is provided in `tests/`:
+- `python tests/test_physical_hardware.py`: Runs 7/7 physical sensor, bus, and GPIO diagnostics on the Pi.
+- `python tests/test_perception_benchmark.py`: Benchmarks PyTorch inference, box fusion clustering, and temporal tracking.
+- `python -m unittest test_autonomous_driver.py test_model_guided_driving.py`: Validates obstacle state machine and trajectory planning.
+- `python tests/test_api_endpoints.py`: Validates REST API schemas and high-concurrency request handling.
+- `python tests/test_soak_endurance.py`: Multi-minute sustained telemetry soak and thermal monitoring.
+
 ---
 
 ## 9. License

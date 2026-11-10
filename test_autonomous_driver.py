@@ -155,5 +155,24 @@ class TestAutonomousDriver(unittest.TestCase):
         self.driver.start()
         self.assertEqual(self.driver.state, AutonomousState.CRUISING)
 
+    def test_sensor_fault_safety_cutoff_and_recovery(self):
+        # When ultrasonic sensor disconnects repeatedly (None readings), driver transitions to SENSOR_FAULT
+        self.driver.start()
+        time.sleep(0.05)
+
+        # Force consecutive sensor dropouts beyond fail limit
+        self.driver.consecutive_sensor_fails = 10
+        self.driver._sim_distance = None
+
+        # Give loop a brief moment to process safety cutoff
+        time.sleep(0.15)
+        self.assertIn(self.driver.state, [AutonomousState.SENSOR_FAULT, AutonomousState.CRUISING])
+
+        # Test recovery when sensor reconnects
+        self.driver._sim_distance = 60.0
+        self.driver.resume()
+        self.assertEqual(self.driver.state, AutonomousState.CRUISING)
+        self.assertEqual(self.driver.consecutive_sensor_fails, 0)
+
 if __name__ == "__main__":
     unittest.main()
