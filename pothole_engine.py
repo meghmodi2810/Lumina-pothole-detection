@@ -108,7 +108,7 @@ class PotholeEngine:
         self.next_track_id = 1
         return True
 
-    def detect_and_analyze(self, image_input, conf_threshold=0.25, enable_box_fusion=True, is_video_stream=False):
+    def detect_and_analyze(self, image_input, conf_threshold=0.25, enable_box_fusion=True, is_video_stream=False, imgsz=None, *args, **kwargs):
         """
         Runs comprehensive perception on a single frame.
         
@@ -129,8 +129,12 @@ class PotholeEngine:
         h, w = img.shape[:2]
         start_time = time.time()
 
-        # Run YOLO inference
-        results = self.model.predict(img, conf=conf_threshold, verbose=False)[0]
+        # Run YOLO inference with optional custom input resolution
+        predict_params = {"conf": conf_threshold, "verbose": False}
+        if imgsz is not None:
+            predict_params["imgsz"] = imgsz
+
+        results = self.model.predict(img, **predict_params)[0]
         inference_time_ms = round((time.time() - start_time) * 1000, 1)
 
         raw_detections = []
@@ -231,8 +235,12 @@ class PotholeEngine:
                 # Render semi-transparent box fill
                 cv2.rectangle(mask_overlay, (x1, y1), (x2, y2), fill_color, -1)
 
+            # Estimate real-world distance based on road contact coordinate y2 (ground-plane projection)
+            y_contact = y2 / float(h)
+            dist_m = max(0.2, min(4.5, round(0.35 / max(0.06, (y_contact - 0.28)), 1)))
+
             # Draw custom cyber-styled bounding box with corner highlights
-            label = f"Pothole #{det_id} | {conf*100:.0f}% ({severity})"
+            label = f"Pothole #{det_id} | {conf*100:.0f}% ({dist_m}m)"
             self._draw_cyber_box(annotated_img, (x1, y1, x2, y2), box_color, label)
 
             detections.append({
@@ -247,6 +255,7 @@ class PotholeEngine:
                 "height_norm": hn,
                 "area_pct": area_pct,
                 "severity": severity,
+                "distance_m": dist_m,
                 "has_mask": mask is not None
             })
 

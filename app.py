@@ -185,16 +185,16 @@ def _ai_perception_worker():
             continue
         try:
             h, w = raw_frame.shape[:2]
-            infer_w = 256
+            infer_w = 320
             infer_h = max(32, int(h * (infer_w / float(w))))
             small_frame = cv2.resize(raw_frame, (infer_w, infer_h))
             
             _, detections, _ = engine.detect_and_analyze(
                 small_frame,
-                conf_threshold=0.35,
-                enable_box_fusion=False,
+                conf_threshold=0.25,
+                enable_box_fusion=True,
                 is_video_stream=True,
-                imgsz=256
+                imgsz=320
             )
 
             # Scale box coordinates back to full resolution (w, h)
@@ -223,12 +223,14 @@ def _ai_perception_worker():
                     last_pothole_log_time = now
                     for det in scaled_detections:
                         conf = float(det.get("confidence", 0.8))
-                        if conf >= 0.40:
+                        if conf >= 0.25:
+                            dist_est = float(det.get("distance_m", 0.8))
                             recent_detected_potholes.insert(0, {
                                 "id": f"POT-{int(now*1000)%100000}",
                                 "timestamp": int(now * 1000),
                                 "severity": det.get("severity", "MODERATE").upper(),
                                 "confidence": round(conf, 2),
+                                "distanceM": round(dist_est, 1),
                                 "estimatedAreaM2": round(float(det.get("width_norm", 0.3) * det.get("height_norm", 0.2) * 1.5), 2),
                                 "depthEstimateCm": 4.5,
                                 "avoidanceAction": plan.get("evasion_mode", "CENTER_TRACKING"),
@@ -236,9 +238,9 @@ def _ai_perception_worker():
                             })
                     if len(recent_detected_potholes) > 20:
                         del recent_detected_potholes[20:]
-                    total_potholes_count += len([d for d in scaled_detections if float(d.get("confidence", 0.8)) >= 0.40])
-        except Exception:
-            pass
+                    total_potholes_count += len([d for d in scaled_detections if float(d.get("confidence", 0.8)) >= 0.25])
+        except Exception as e:
+            logger.error(f"[AI Perception] Worker exception: {e}", exc_info=True)
         time.sleep(0.08)
 
 threading.Thread(target=_ai_perception_worker, daemon=True).start()
@@ -935,7 +937,16 @@ def start_vehicle():
     is_drive_engaged = True
     motor.release_emergency_stop()
     if active_drive_mode == "autonomous":
-        auto_driver.start()
+        auto_driver.resume()
+    return jsonify({"success": True, "state": "DRIVING", "mode": active_drive_mode})
+
+@app.route("/api/v1/vehicle/resume", methods=["POST"])
+def resume_vehicle():
+    global is_drive_engaged
+    is_drive_engaged = True
+    motor.release_emergency_stop()
+    if active_drive_mode == "autonomous":
+        auto_driver.resume()
     return jsonify({"success": True, "state": "DRIVING", "mode": active_drive_mode})
 
 @app.route("/api/v1/vehicle/stop", methods=["POST"])
@@ -985,9 +996,24 @@ def trigger_emergency_stop():
 
 @app.route("/api/v1/emergency_release", methods=["POST"])
 def release_emergency_stop():
-    auto_driver.stop()
+    global is_drive_engaged
     motor.release_emergency_stop()
-    return jsonify({"success": True, "emergency_stop": False})
+    if active_drive_mode == "autonomous":
+        is_drive_engaged = True
+        auto_driver.resume()
+    return jsonify({
+        "success": True,
+        "emergency_stop": False,
+        "mode": active_drive_mode,
+        "is_driving": is_drive_engaged
+    })
+
+@app.route("/api/v1/camera/start", methods=["POST"])
+def start_camera_v1():
+    """Wakes up or restarts camera streaming pipeline."""
+    if not camera.is_running:
+        camera.start(mode="webcam")
+    return jsonify({"success": True, "status": "running", "mode": camera.mode})
 
 @app.route("/api/v1/session/pair", methods=["POST"])
 def pair_session():

@@ -262,6 +262,12 @@ Batches driving video footage, tracks defects across time, and transcodes output
 ### `GET /video_feed`
 Real-time multipart MJPEG stream rendering live detection polygons, bounding boxes, and dynamic AR path trajectory overlay.
 
+### `POST /api/v1/vehicle/resume`
+Resumes autonomous driving from an obstacle halt, trapped state (`BLOCKED_WAITING`), or emergency release without deadlock.
+
+### `POST /api/v1/camera/start`
+Actively restarts or wakes up the edge camera pipeline (CSI Picamera2 or V4L2 USB).
+
 ---
 
 ## 8. Autonomous Navigation & Hardware Diagnostics
@@ -274,11 +280,11 @@ For full documentation on the physical edge car architecture, see [AUTONOMOUS_HA
 - Surfaces actionable subsystem failure diagnostics if any sensor or bus is degraded.
 
 ### 8.2 Closed-Loop Autonomous Driving (`/api/v1/vehicle/mode`)
-- **Situation A (Clear Path)**: Cruises forward at calibrated 65% PWM duty cycle.
-- **Situation B (Obstacle Detected)**: Immediate motor halt when distance $\le 28.0\text{ cm}$.
-- **Situation C (Intelligent Evasion)**: Backs up 0.35s if close ($< 18.0\text{ cm}$), adaptively picks turn direction avoiding repetitive loops, and verifies clearance $\ge 35.0\text{ cm}$.
-- **Situation D (Trapped / Blocked)**: Halts in `BLOCKED_WAITING` after 4 failed turns, resuming automatically when path clears.
-- **Brownout Protection**: Modulates hardware PWM on `ENA` (GPIO 18) and `ENB` (GPIO 12), preventing high-current battery drops and Pi reboots.
+- **Situation A (Clear Path)**: Cruises forward at calibrated 78% PWM duty cycle with **180ms Kickstart Breakout Pulse** to overcome static floor friction.
+- **Situation B (Obstacle Detected)**: Immediate motor halt when distance $\le 20.0\text{ cm}$.
+- **Situation C (Intelligent Evasion)**: Backs up 0.70s if close ($< 15.0\text{ cm}$), adaptively picks turn direction with a 0.70s high-torque pivot turn (88% PWM), avoiding repetitive loops, and verifies clearance $\ge 26.0\text{ cm}$.
+- **Situation D (Trapped / Blocked)**: Halts in `BLOCKED_WAITING` after 5 failed turns, resuming automatically when path clears or immediately upon tapping Resume in the mobile app.
+- **Brownout Protection & Stiction Buster**: Modulates hardware PWM on `ENA` (GPIO 18) and `ENB` (GPIO 12), ensuring differential inner wheels never drop below 35% PWM during active turns.
 
 ---
 

@@ -136,5 +136,24 @@ class TestAutonomousDriver(unittest.TestCase):
         self.assertEqual(self.driver.state, AutonomousState.EMERGENCY_STOP)
         self.assertTrue(self.motor.is_emergency_stopped)
 
+    def test_resume_from_blocked_or_obstacle_state(self):
+        # Simulate car getting trapped in BLOCKED_WAITING
+        self.driver.is_active = True
+        self.driver.state = AutonomousState.BLOCKED_WAITING
+        self.driver.avoidance_attempts = 4
+
+        # Calling resume() must clear state back to CRUISING and reset attempts
+        self.driver.resume()
+        self.assertEqual(self.driver.state, AutonomousState.CRUISING)
+        self.assertEqual(self.driver.avoidance_attempts, 0)
+        self.assertFalse(self.motor.is_emergency_stopped)
+
+    def test_start_unblocks_active_halt(self):
+        # When driver is active but stopped in OBSTACLE_STOP, calling start() resumes it
+        self.driver.is_active = True
+        self.driver.state = AutonomousState.OBSTACLE_STOP
+        self.driver.start()
+        self.assertEqual(self.driver.state, AutonomousState.CRUISING)
+
 if __name__ == "__main__":
     unittest.main()

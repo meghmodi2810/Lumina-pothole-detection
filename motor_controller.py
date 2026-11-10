@@ -51,7 +51,7 @@ class MotorController:
         self.in4 = in4
         self.enb = enb
         self.pwm_frequency = pwm_frequency
-        self.default_speed_pct = 100.0
+        self.default_speed_pct = 85.0
         self.min_start_pwm = 50
         self.max_speed_ceiling = 1.0
         self.watchdog_timeout_sec = watchdog_timeout_sec
@@ -122,32 +122,34 @@ class MotorController:
     # 4-DIRECTIONAL TACTILE CONTROLS (Straight, Reverse, Left, Right, Stop)
     # -------------------------------------------------------------------------
     def forward(self, speed=None):
-        """Drives ALL 4 WHEELS straight forward."""
+        """Drives ALL 4 WHEELS straight forward with stiction breakout kickstart."""
         spd = max(0.0, min(100.0, float(speed))) if speed is not None else self.default_speed_pct
         with self._lock:
             self.is_emergency_stopped = False
             self.last_command_time = time.time()
+            was_stopped = not self.is_driving
             self.is_driving = True
             self.current_action = "forward"
             self.current_throttle = spd / 100.0
             self.current_steering = 0.0
             # IN1=HIGH, IN2=LOW (Left Forward) | IN3=HIGH, IN4=LOW (Right Forward)
-            self._apply_raw_outputs(1, 0, 1, 0, spd, spd)
-            logger.info(f"[Action] ALL 4 WHEELS FORWARD @ {spd:.0f}% POWER")
+            self._apply_raw_outputs(1, 0, 1, 0, spd, spd, was_stopped=was_stopped)
+            logger.info(f"[Action] ALL 4 WHEELS FORWARD @ {spd:.0f}% POWER (Kickstart: {was_stopped})")
 
     def backward(self, speed=None):
-        """Drives ALL 4 WHEELS straight backward."""
+        """Drives ALL 4 WHEELS straight backward with stiction breakout kickstart."""
         spd = max(0.0, min(100.0, float(speed))) if speed is not None else self.default_speed_pct
         with self._lock:
             self.is_emergency_stopped = False
             self.last_command_time = time.time()
+            was_stopped = not self.is_driving
             self.is_driving = True
             self.current_action = "backward"
             self.current_throttle = -(spd / 100.0)
             self.current_steering = 0.0
             # IN1=LOW, IN2=HIGH (Left Reverse) | IN3=LOW, IN4=HIGH (Right Reverse)
-            self._apply_raw_outputs(0, 1, 0, 1, spd, spd)
-            logger.info(f"[Action] ALL 4 WHEELS BACKWARD @ {spd:.0f}% POWER")
+            self._apply_raw_outputs(0, 1, 0, 1, spd, spd, was_stopped=was_stopped)
+            logger.info(f"[Action] ALL 4 WHEELS BACKWARD @ {spd:.0f}% POWER (Kickstart: {was_stopped})")
 
     def left(self, speed=None):
         """Turn / spin left (Right wheels drive forward, Left wheels reverse)."""
@@ -155,13 +157,14 @@ class MotorController:
         with self._lock:
             self.is_emergency_stopped = False
             self.last_command_time = time.time()
+            was_stopped = not self.is_driving
             self.is_driving = True
             self.current_action = "left"
             self.current_throttle = 0.0
             self.current_steering = -(spd / 100.0)
             # Spin Turn: Left Reverse (0, 1), Right Forward (1, 0)
-            self._apply_raw_outputs(0, 1, 1, 0, spd, spd)
-            logger.info(f"[Action] 4WD TURN LEFT @ {spd:.0f}% POWER")
+            self._apply_raw_outputs(0, 1, 1, 0, spd, spd, was_stopped=was_stopped)
+            logger.info(f"[Action] 4WD TURN LEFT @ {spd:.0f}% POWER (Kickstart: {was_stopped})")
 
     def right(self, speed=None):
         """Turn / spin right (Left wheels drive forward, Right wheels reverse)."""
@@ -169,13 +172,14 @@ class MotorController:
         with self._lock:
             self.is_emergency_stopped = False
             self.last_command_time = time.time()
+            was_stopped = not self.is_driving
             self.is_driving = True
             self.current_action = "right"
             self.current_throttle = 0.0
             self.current_steering = spd / 100.0
             # Spin Turn: Left Forward (1, 0), Right Reverse (0, 1)
-            self._apply_raw_outputs(1, 0, 0, 1, spd, spd)
-            logger.info(f"[Action] 4WD TURN RIGHT @ {spd:.0f}% POWER")
+            self._apply_raw_outputs(1, 0, 0, 1, spd, spd, was_stopped=was_stopped)
+            logger.info(f"[Action] 4WD TURN RIGHT @ {spd:.0f}% POWER (Kickstart: {was_stopped})")
 
     def stop(self):
         """Stops all motor outputs immediately."""
@@ -185,7 +189,7 @@ class MotorController:
             self.current_action = "stop"
             self.current_throttle = 0.0
             self.current_steering = 0.0
-            self._apply_raw_outputs(0, 0, 0, 0, 0.0, 0.0)
+            self._apply_raw_outputs(0, 0, 0, 0, 0.0, 0.0, was_stopped=False)
             logger.info("[Action] STOP ALL 4 MOTORS")
 
     def execute_action(self, action: str, speed=None):
@@ -225,29 +229,30 @@ class MotorController:
             if abs(throttle) < 0.05 and abs(steering) < 0.05:
                 self.is_driving = False
                 self.current_action = "stop"
-                self._apply_raw_outputs(0, 0, 0, 0, 0.0, 0.0)
+                self._apply_raw_outputs(0, 0, 0, 0, 0.0, 0.0, was_stopped=False)
                 return
 
+            was_stopped = not self.is_driving
             self.is_driving = True
 
-            # Calibrated differential drive speed based on throttle
-            base_speed = max(20.0, min(100.0, abs(throttle) * 100.0))
+            # Calibrated differential drive speed based on throttle with stiction minimum
+            base_speed = max(40.0, min(100.0, abs(throttle) * 100.0))
             if steering >= 0:
                 left_speed = base_speed
-                right_speed = max(0.0, base_speed * (1.0 - 0.70 * steering))
+                right_speed = max(35.0, base_speed * (1.0 - 0.65 * steering))
             else:
-                left_speed = max(0.0, base_speed * (1.0 - 0.70 * abs(steering)))
+                left_speed = max(35.0, base_speed * (1.0 - 0.65 * abs(steering)))
                 right_speed = base_speed
 
             is_forward = throttle >= 0
             if is_forward:
                 self.current_action = "forward"
-                self._apply_raw_outputs(1, 0, 1, 0, left_speed, right_speed)
+                self._apply_raw_outputs(1, 0, 1, 0, left_speed, right_speed, was_stopped=was_stopped)
             else:
                 self.current_action = "backward"
-                self._apply_raw_outputs(0, 1, 0, 1, left_speed, right_speed)
+                self._apply_raw_outputs(0, 1, 0, 1, left_speed, right_speed, was_stopped=was_stopped)
 
-    def _apply_raw_outputs(self, in1_val, in2_val, in3_val, in4_val, left_speed, right_speed):
+    def _apply_raw_outputs(self, in1_val, in2_val, in3_val, in4_val, left_speed, right_speed, was_stopped=False):
         self.left_pwm_pct = round(left_speed, 1)
         self.right_pwm_pct = round(right_speed, 1)
 
@@ -266,6 +271,14 @@ class MotorController:
                 is_right_active = bool(in3_val or in4_val)
 
                 if getattr(self, '_has_hardware_pwm', False) and self.pwm_left is not None and self.pwm_right is not None:
+                    # Stiction Buster Kickstart: Burst 100% PWM for 180ms when starting from stopped
+                    if was_stopped and (is_left_active or is_right_active) and (left_speed > 15.0 or right_speed > 15.0):
+                        burst_l = 100.0 if is_left_active else 0.0
+                        burst_r = 100.0 if is_right_active else 0.0
+                        self.pwm_left.ChangeDutyCycle(burst_l)
+                        self.pwm_right.ChangeDutyCycle(burst_r)
+                        time.sleep(0.18)
+
                     target_l = max(0.0, min(100.0, float(left_speed))) if is_left_active else 0.0
                     target_r = max(0.0, min(100.0, float(right_speed))) if is_right_active else 0.0
                     self.pwm_left.ChangeDutyCycle(target_l)
@@ -276,7 +289,7 @@ class MotorController:
             except Exception as e:
                 logger.error(f"Error applying hardware motor outputs: {e}")
         else:
-            logger.debug(f"[SIM] IN=({in1_val},{in2_val},{in3_val},{in4_val}) PWM=({left_speed:.0f}%, {right_speed:.0f}%)")
+            logger.debug(f"[SIM] IN=({in1_val},{in2_val},{in3_val},{in4_val}) PWM=({left_speed:.0f}%, {right_speed:.0f}%) Kickstart={was_stopped}")
 
     def emergency_stop(self):
         with self._lock:

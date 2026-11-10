@@ -23,16 +23,16 @@ logger = logging.getLogger("AutonomousDriver")
 DEFAULT_TRIG_PIN = 16
 DEFAULT_ECHO_PIN = 26
 
-# Navigation Thresholds (Configurable)
-DEFAULT_STOP_DISTANCE_CM = 28.0       # Stop if obstacle closer than this
-DEFAULT_BACKOFF_DISTANCE_CM = 18.0    # Reverse slightly if closer than this
-DEFAULT_CLEAR_DISTANCE_CM = 35.0      # Path considered clear to cruise
-DEFAULT_CRUISE_SPEED = 65.0           # Smooth forward speed pct (0-100)
-DEFAULT_REVERSE_SPEED = 70.0
-DEFAULT_TURN_SPEED = 75.0
-DEFAULT_REVERSE_DURATION = 0.35       # Seconds to reverse
-DEFAULT_TURN_PULSE_DURATION = 0.32    # Base seconds to pivot turn
-DEFAULT_MAX_AVOID_ATTEMPTS = 4        # Max failed turn attempts before halting in blocked state
+# Navigation Thresholds (Calibrated for Real Chassis Physics & Stiction)
+DEFAULT_STOP_DISTANCE_CM = 20.0       # Stop if obstacle closer than 20cm
+DEFAULT_BACKOFF_DISTANCE_CM = 15.0    # Reverse slightly if closer than 15cm
+DEFAULT_CLEAR_DISTANCE_CM = 26.0      # Path considered clear to cruise
+DEFAULT_CRUISE_SPEED = 78.0           # Smooth forward speed pct with stiction breakout
+DEFAULT_REVERSE_SPEED = 85.0          # High-torque reverse
+DEFAULT_TURN_SPEED = 88.0             # High-torque skid steer turn
+DEFAULT_REVERSE_DURATION = 0.70       # Full 0.70s reverse (~12cm clearance)
+DEFAULT_TURN_PULSE_DURATION = 0.70    # Full 0.70s pivot turn (~45-60 deg)
+DEFAULT_MAX_AVOID_ATTEMPTS = 5        # Max failed turn attempts before halting in blocked state
 DEFAULT_SENSOR_FAIL_LIMIT = 8         # Consecutive hardware disconnects before safety stop
 
 
@@ -194,11 +194,14 @@ class AutonomousDriver:
                     return self._recent_distances[-1]
                 return None
 
-    def start(self):
-        """Starts Autonomous Driving in a dedicated background thread."""
+    def start(self, force_restart=False):
+        """Starts Autonomous Driving or resumes from blocked/obstacle state."""
         with self._lock:
-            if self.is_active:
-                logger.info("Autonomous mode is already active.")
+            if self.is_active and not force_restart:
+                # If currently blocked or halted by obstacle, resume immediately!
+                if self.state in (AutonomousState.OBSTACLE_STOP, AutonomousState.BLOCKED_WAITING, AutonomousState.SENSOR_FAULT):
+                    logger.info("Autonomous mode was halted/blocked; triggering resume.")
+                    self.resume()
                 return
 
             self.is_active = True
@@ -211,13 +214,35 @@ class AutonomousDriver:
             if hasattr(self.motor, "release_emergency_stop"):
                 self.motor.release_emergency_stop()
 
-            self._thread = threading.Thread(
-                target=self._autonomous_navigation_loop,
-                name="AutonomousNavigationLoop",
-                daemon=True
-            )
-            self._thread.start()
+            if self._thread is None or not self._thread.is_alive():
+                self._thread = threading.Thread(
+                    target=self._autonomous_navigation_loop,
+                    name="AutonomousNavigationLoop",
+                    daemon=True
+                )
+                self._thread.start()
             logger.info(">>> LUMINA AUTONOMOUS MODE ACTIVATED <<<")
+
+    def resume(self):
+        """Explicit resume after obstacle stop, blocked waiting, or manual pause."""
+        with self._lock:
+            logger.info(">>> LUMINA AUTONOMOUS MODE RESUMED BY USER <<<")
+            self.avoidance_attempts = 0
+            self.consecutive_sensor_fails = 0
+            self.turn_history.clear()
+            self.state = AutonomousState.CRUISING
+
+            if hasattr(self.motor, "release_emergency_stop"):
+                self.motor.release_emergency_stop()
+
+            if not self.is_active or self._thread is None or not self._thread.is_alive():
+                self.is_active = True
+                self._thread = threading.Thread(
+                    target=self._autonomous_navigation_loop,
+                    name="AutonomousNavigationLoop",
+                    daemon=True
+                )
+                self._thread.start()
 
     def stop(self, state=AutonomousState.IDLE):
         """Gracefully and immediately stops autonomous driving and halts all motors."""
@@ -305,7 +330,8 @@ class AutonomousDriver:
                             time.sleep(0.1)
                         elif evasion_mode in ("EVADE_LEFT", "EVADE_RIGHT"):
                             steer = float(ai_plan.get("steering", 0.0))
-                            throttle_norm = (self.cruise_speed * 0.70) / 100.0
+                            # Keep sufficient PWM (85% of cruise speed) during evasion to prevent stalling
+                            throttle_norm = (self.cruise_speed * 0.85) / 100.0
                             logger.info(f"[Vision Evasion] Routing around pothole: {evasion_mode} (steer={steer:+.2f})")
                             self.motor.set_drive_command(steer, throttle_norm)
                             time.sleep(0.06)
@@ -400,13 +426,11 @@ class AutonomousDriver:
                 # -------------------------------------------------------------
                 elif self.state == AutonomousState.BLOCKED_WAITING:
                     # Vehicle is safely stationary. Periodically probe distance to see if obstacle moved away
-                    time.sleep(1.0)
+                    time.sleep(0.5)
                     dist = self.get_filtered_distance()
-                    if dist is not None and dist >= (self.clear_dist_cm + 5.0):
+                    if dist is not None and dist >= self.clear_dist_cm:
                         logger.info(f"[Obstacle Cleared in Blocked State] Distance is now {dist:.1f} cm! Resuming autonomous driving.")
-                        self.avoidance_attempts = 0
-                        self.turn_history.clear()
-                        self.state = AutonomousState.CRUISING
+                        self.resume()
 
                 # -------------------------------------------------------------
                 # SENSOR FAULT HANDLING
