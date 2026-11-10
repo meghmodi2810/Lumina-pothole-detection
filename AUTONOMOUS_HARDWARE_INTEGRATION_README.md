@@ -430,3 +430,14 @@ To ensure zero regressions and eliminate runtime failures, an exhaustive test ba
 | **`tests/test_soak_endurance.py`** | Edge HTTP Server (`10.40.110.31`) | Continuous multi-minute telemetry polling @ 12 Hz, thermal envelope stability (< 60°C), memory RSS leak prevention, zero dropped connections. | **PASSED (0% error rate)** |
 | **Flutter Mobile App Test Suite** | Mobile Host Environment | Widget and unit tests (`emergency_stop_widget_test`, `vehicle_data_source_test`, `stream_overlay_test`, `telemetry_card_test`, `manual_controller_test`, etc.), Dart analysis (`0 issues`), APK debug build (`app-debug.apk`). | **8 / 8 PASSED (100%)** |
 
+### 11.7 Live AI HUD Stream Default & Human-Readable Hazard Overlays
+- **The Problem**:
+  The user noticed that the mobile app stream showed only naked camera footage without the highlighted pothole boxes, severity labels, or the curved avoidance flight corridor that the web dashboard displayed. Simultaneously, an event toast popped up with internal backend metadata (`POTHOLE RECORDED • POT-58392 • 2.3m ahead`) which felt disconnected and unreadable.
+- **Root Cause**:
+  1. In `camera_stream_view.dart`, `_useAiOverlay` was hardcoded to `false` by default, routing the stream to `/clean_feed` instead of `/video_feed` (which renders the cyber bounding boxes and AR flight trajectory). Additionally, any network exception demoted `_useAiOverlay` to `false` permanently.
+  2. In `pothole_event_dialog.dart`, the banner rendered the internal UNIX timestamp identifier (`POT-XXXXX`) rather than the actual hazard severity classification.
+- **Implementation**:
+  1. Set `_useAiOverlay = true` by default in `camera_stream_view.dart` and removed silent fallback demotions, ensuring the mobile stream ALWAYS receives `/video_feed` with live polygon highlights, severity tags, and curved trajectory ribbon.
+  2. Redesigned `pothole_event_dialog.dart` to clearly surface `POTHOLE DETECTED • [SEVERITY] HAZARD` (e.g. `CRITICAL`, `MODERATE`) alongside confidence percentage, estimated distance, and dynamic evasion status (`Dynamic Evasion Active`).
+
+
