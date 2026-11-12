@@ -268,6 +268,10 @@ Resumes autonomous driving from an obstacle halt, trapped state (`BLOCKED_WAITIN
 ### `POST /api/v1/camera/start`
 Actively restarts or wakes up the edge camera pipeline (CSI Picamera2 or V4L2 USB).
 
+### UDP Auto-Discovery Beacon (`Port 5005`)
+Broadcasts `DISCOVER_LUMINA` over UDP `255.255.255.255:5005`. The edge vehicle discovery daemon instantly replies with IP and port configuration (`{"service": "LUMINA_CAR", "vehicleId": "LUMINA-01", "port": 5000, "status": "HEALTHY"}`), ensuring automatic zero-configuration binding when host DHCP subnets rotate.
+
+
 ---
 
 ## 8. Autonomous Navigation & Hardware Diagnostics

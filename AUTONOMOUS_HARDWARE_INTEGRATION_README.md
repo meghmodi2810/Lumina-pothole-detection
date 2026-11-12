@@ -453,5 +453,21 @@ To ensure zero regressions and eliminate runtime failures, an exhaustive test ba
   3. **Authentic Camera Standby**: Replaced fake moving road graphics in `camera_stream_view.dart` with a clean standby card and retry trigger.
   4. **Active IP Rebound**: Bound all default endpoints across client and test suites to `http://10.43.219.31:5000`.
 
+### 11.9 Complete Excision of Simulation Mode from Mobile Companion App
+In accordance with zero-simulation production requirements, all synthetic road simulations, fake demo buttons, and simulated telemetry fallbacks have been completely removed:
+1. **Removed Embedded Simulator Configuration**:
+   - Stripped `useEmbeddedSimulator` and `useSimulator` from `EnvironmentConfig`.
+   - Removed `VehicleSimulatorSource` instantiation and injection from `main.dart`. In production, `DiagnosticsRepositoryImpl` and `VehicleRepositoryImpl` run exclusively against physical hardware.
+2. **Removed Demo / Simulator UI Buttons**:
+   - Removed the "Start Simulator Demo" button and `onUseSimulator` callback from `ConnectionFailureScreen`. If the vehicle fails to connect, the user is presented solely with actionable troubleshooting (retry button, exact connection error message, target host display, and manual IP configuration).
+3. **Removed Synthetic Graphics**:
+   - Replaced the top `SIMULATION MODE` badge with `DISCONNECTED` in `CameraStreamView`.
+   - Completely deleted `_RealisticRoadBackgroundPainter` and its continuous animation ticker. When the video stream is disconnected, the view displays an authentic hardware standby HUD with a retry button.
+4. **Authentic Diagnostic Runs**:
+   - In `DiagnosticsRepositoryImpl`, running a self-test while disconnected returns an authentic `FAILED` check (`Car disconnected. Connect to physical vehicle before running self-test`) rather than fabricating synthetic 50+ GB storage or fake 8/8 passing subsystems.
+5. **Headless Unit Test Isolation**:
+   - Mock simulator instances are strictly isolated to headless Dart unit tests (`test/state_machine_test.dart` and `test/widget_test.dart`) via the explicit `'simulator'` test host parameter, preventing any leakage into production builds.
+
+
 
 
