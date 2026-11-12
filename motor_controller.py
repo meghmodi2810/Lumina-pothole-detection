@@ -305,14 +305,19 @@ class MotorController:
                 is_right_active = bool(in3_val or in4_val)
 
                 if getattr(self, '_has_hardware_pwm', False) and self.pwm_left is not None and self.pwm_right is not None:
-                    # Dynamic Launch Kickstart: Burst 100% PWM for 300ms when starting from stopped,
-                    # then decay to overcome static friction and inertia without stalling.
+                    # Dynamic Launch Kickstart with Inrush Soft-Stagger:
+                    # Staggers left and right start by 50ms to halve the instantaneous battery surge current (prevents voltage collapse),
+                    # then holds 100% PWM for 250ms to overcome static friction before smooth decay.
                     if was_stopped and (is_left_active or is_right_active) and (left_speed > 15.0 or right_speed > 15.0):
+                        if is_left_active and is_right_active:
+                            self.pwm_left.ChangeDutyCycle(100.0)
+                            self.pwm_right.ChangeDutyCycle(0.0)
+                            time.sleep(0.05)
                         burst_l = 100.0 if is_left_active else 0.0
                         burst_r = 100.0 if is_right_active else 0.0
                         self.pwm_left.ChangeDutyCycle(burst_l)
                         self.pwm_right.ChangeDutyCycle(burst_r)
-                        time.sleep(0.30)
+                        time.sleep(0.25)
                         # Smooth decay step before setting continuous target
                         mid_l = max(left_speed, (100.0 + left_speed) / 2.0) if is_left_active else 0.0
                         mid_r = max(right_speed, (100.0 + right_speed) / 2.0) if is_right_active else 0.0

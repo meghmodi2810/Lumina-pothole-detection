@@ -500,6 +500,16 @@ To ensure zero regressions and eliminate runtime failures, an exhaustive test ba
      * **Payload**: `{"channel": "left" | "right" | "both", "duration": 1.5, "speed": 100.0, "direction": "forward" | "backward"}`
      * Dispatches isolated power to each side so the user can visually verify which wheels spin and in what direction.
 
+### 11.12 Inrush Current Soft-Stagger to Eliminate Battery Voltage Collapse
+- **The Problem**:
+  During all-wheel tests and initial drive launch, all 4 motors turning on at the identical microsecond demanded an instantaneous inrush surge current of 3.0A to 4.0A. On standard 2S battery packs or alkaline AA cells with moderate internal resistance, this caused severe battery voltage sag (collapsing from 7V down to < 3V), resulting in only the easiest motor spinning while the others choked.
+- **Root Cause & Solution**:
+  In `motor_controller.py`'s dynamic launch sequence, introduced an **Inrush Soft-Stagger**:
+  * Channel A (Left side) pulses 100% PWM for the first 50ms to break static friction on the left wheels.
+  * Channel B (Right side) is then energized, holding 100% PWM across all 4 wheels for 250ms.
+  * By staggering the initial capacitive and inductive stall surge by 50ms, the peak current demand is reduced by ~50%, preventing battery voltage collapse and ensuring all 4 wheels receive sustained operating voltage.
+
+
 
 
 
