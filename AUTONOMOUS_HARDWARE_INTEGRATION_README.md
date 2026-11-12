@@ -440,4 +440,18 @@ To ensure zero regressions and eliminate runtime failures, an exhaustive test ba
   1. Set `_useAiOverlay = true` by default in `camera_stream_view.dart` and removed silent fallback demotions, ensuring the mobile stream ALWAYS receives `/video_feed` with live polygon highlights, severity tags, and curved trajectory ribbon.
   2. Redesigned `pothole_event_dialog.dart` to clearly surface `POTHOLE DETECTED • [SEVERITY] HAZARD` (e.g. `CRITICAL`, `MODERATE`) alongside confidence percentage, estimated distance, and dynamic evasion status (`Dynamic Evasion Active`).
 
+### 11.8 Dynamic Network Rebinding (Hotspot Subnet Transition) & Zero-Fallback Connection Discipline
+- **The Problem**:
+  The user reconnected the car to a mobile hotspot whose DHCP subnet rotated from `10.40.110.x` to `10.43.219.x`. Consequently, connecting to the previous IP failed. Rather than alerting the user with an actionable failure message, the mobile app silently slipped into a simulation mode that emitted synthetic speed, fake temperatures, and animated fake road lines.
+- **Root Cause**:
+  1. `lumina_app_state.dart` and `vehicle_repository_impl.dart` unconditionally invoked `simulator.simulatePair()` and transitioned to `VehicleState.connected` even when `liveSource.connect()` timed out!
+  2. `camera_stream_view.dart` rendered an animated synthetic road canvas with simulated lanes when disconnected.
+  3. The mobile client lacked UDP beacon discovery to automatically detect when the car's IP shifts on dynamic hotspot DHCP assignment.
+- **Implementation**:
+  1. **Strict Zero-Fallback Policy**: Completely eliminated silent simulator fallbacks. When car connection fails, `lumina_app_state.dart` transitions to `VehicleState.disconnected`, records the exact network error, and displays `ConnectionFailureScreen` with the target IP and root cause.
+  2. **UDP Port 5005 Beacon Discovery**: Added `RawDatagramSocket` broadcast in `vehicle_connection_screen.dart` sending `DISCOVER_LUMINA` to `255.255.255.255:5005`. The car's discovery responder replies in ~1ms with its new IP (`10.43.219.31:5000`).
+  3. **Authentic Camera Standby**: Replaced fake moving road graphics in `camera_stream_view.dart` with a clean standby card and retry trigger.
+  4. **Active IP Rebound**: Bound all default endpoints across client and test suites to `http://10.43.219.31:5000`.
+
+
 

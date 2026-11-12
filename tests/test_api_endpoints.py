@@ -12,7 +12,7 @@ import urllib.request
 import urllib.error
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-BASE_URL = os.environ.get("LUMINA_HOST", "http://10.40.110.31:5000")
+BASE_URL = os.environ.get("LUMINA_HOST", "http://10.43.219.31:5000")
 
 
 def http_request(path, method="GET", data=None, timeout=5.0):

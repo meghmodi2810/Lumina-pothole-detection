@@ -17,7 +17,7 @@ import urllib.request
 import urllib.error
 import numpy as np
 
-BASE_URL = os.environ.get("LUMINA_HOST", "http://10.40.110.31:5000")
+BASE_URL = os.environ.get("LUMINA_HOST", "http://10.43.219.31:5000")
 
 
 def http_get(path, timeout=5.0):
