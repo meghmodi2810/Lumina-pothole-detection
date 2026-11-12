@@ -778,14 +778,17 @@ def start_discovery_responder():
 
 start_discovery_responder()
 
-@app.route("/api/v1/diagnostics/motor/test", methods=["POST"])
+@app.route("/api/v1/diagnostics/motor/test", methods=["GET", "POST"])
 def post_motor_diagnostic_test():
     """
     Isolated Channel Actuation Test:
     Allows user to test Left pair ONLY, Right pair ONLY, or Both pairs,
     for a controlled duration (default 1.5s), to isolate dead, reversed, or weak motors.
     """
-    data = request.get_json(silent=True) or {}
+    json_data = request.get_json(silent=True) or {}
+    args_data = request.args.to_dict() or {}
+    form_data = request.form.to_dict() or {}
+    data = {**args_data, **form_data, **json_data}
     channel = data.get("channel", "left").lower()
     speed = float(data.get("speed", 100.0))
     duration = min(4.0, max(0.5, float(data.get("duration", 1.5))))
@@ -928,7 +931,10 @@ def apply_model_guidance_to_manual_command(steering=0.0, throttle=0.0, action=No
 @app.route("/api/v1/control", methods=["POST"])
 @app.route("/api/drive", methods=["POST"])
 def post_manual_control():
-    data = request.get_json(silent=True) or {}
+    json_data = request.get_json(silent=True) or {}
+    args_data = request.args.to_dict() or {}
+    form_data = request.form.to_dict() or {}
+    data = {**args_data, **form_data, **json_data}
     control = data.get("control", data)
 
     # 1. Discrete 4-directional action (forward, backward, left, right, stop)
