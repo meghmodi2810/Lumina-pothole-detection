@@ -476,6 +476,31 @@ To ensure zero regressions and eliminate runtime failures, an exhaustive test ba
      - Executed the native test suite on the Pi (`test_autonomous_driver.py` and `test_model_guided_driving.py`): **17 / 17 PASSED (100%)**.
      - Gracefully restarted `lumina-car.service` via systemd (`PID 5895`). Verified `/api/v1/health` reports status `HEALTHY`.
 
+### 11.11 Multi-Motor Power Asymmetry Diagnostics & Hardware Troubleshooting Guide
+- **The Problem**:
+  The user observed that only one motor appears to be running at full capacity, while the other motors feel significantly weaker or struggle to deliver full torque.
+- **Hardware Architecture Context**:
+  The LUMINA IoT vehicle uses an L298N Dual H-Bridge motor driver connected to 4 DC yellow gearbox (TT) motors. The L298N has only **two power channels**:
+  * **Channel A (OUT1 / OUT2)**: Powers Front-Left and Rear-Left motors wired in parallel.
+  * **Channel B (OUT3 / OUT4)**: Powers Front-Right and Rear-Right motors wired in parallel.
+- **Top 5 Root Causes for Single-Motor Dominance**:
+  1. **Motor Polarity Reversal (Phase Fighting)**:
+     If the wires on one motor (e.g. Rear-Left) are swapped (+ and - reversed relative to Front-Left), that motor rotates in reverse while the other rotates forward. On the ground, the two motors cancel each other out, producing high current draw, loud buzzing, and zero net forward thrust.
+  2. **Wheel Hub Chassis Rubbing (Mechanical Handbrake)**:
+     If any wheel is pressed too firmly onto the dual-flat motor shaft, the plastic wheel rim rubs against the acrylic chassis frame or motor bracket screws, acting as a physical friction brake on that specific motor.
+  3. **Parallel Impedance Mismatch & Current Starvation**:
+     In parallel circuits, current divides inversely with resistance ($I = V/R$). Cheap brushed DC motors have slight differences in internal winding resistance and gear grease viscosity. The motor with lower resistance or less friction draws the bulk of the 1.5A channel budget, leaving insufficient current for its parallel partner to overcome static gearbox friction.
+  4. **Loose Wire in Terminal Clamp**:
+     Because two motor leads must be twisted together into each single screw terminal (`OUT1`, `OUT2`, `OUT3`, `OUT4`), one wire can easily become unseated or make high-resistance contact under the clamp screw.
+  5. **L298N ENA / ENB Jumper Discrepancy**:
+     If the black hardware jumper cap is installed on one enable header (e.g. ENA tied to 5V onboard logic), that channel runs at uninhibited 100% full battery voltage, while the other channel (controlled via GPIO PWM) may experience software duty cycle limits or resistance differences.
+- **Software Diagnostic Implementation**:
+  1. Added isolated channel methods in `motor_controller.py`: `left_side_only(speed, forward)` and `right_side_only(speed, forward)`.
+  2. Added REST endpoint `POST /api/v1/diagnostics/motor/test`:
+     * **Payload**: `{"channel": "left" | "right" | "both", "duration": 1.5, "speed": 100.0, "direction": "forward" | "backward"}`
+     * Dispatches isolated power to each side so the user can visually verify which wheels spin and in what direction.
+
+
 
 
 

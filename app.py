@@ -778,6 +778,42 @@ def start_discovery_responder():
 
 start_discovery_responder()
 
+@app.route("/api/v1/diagnostics/motor/test", methods=["POST"])
+def post_motor_diagnostic_test():
+    """
+    Isolated Channel Actuation Test:
+    Allows user to test Left pair ONLY, Right pair ONLY, or Both pairs,
+    for a controlled duration (default 1.5s), to isolate dead, reversed, or weak motors.
+    """
+    data = request.get_json(silent=True) or {}
+    channel = data.get("channel", "left").lower()
+    speed = float(data.get("speed", 100.0))
+    duration = min(4.0, max(0.5, float(data.get("duration", 1.5))))
+    direction = data.get("direction", "forward").lower()
+    is_fwd = direction == "forward"
+
+    if channel in ("left", "ch_a"):
+        motor.left_side_only(speed=speed, forward=is_fwd)
+    elif channel in ("right", "ch_b"):
+        motor.right_side_only(speed=speed, forward=is_fwd)
+    else:
+        if is_fwd:
+            motor.forward(speed)
+        else:
+            motor.backward(speed)
+
+    time.sleep(duration)
+    motor.stop()
+
+    return jsonify({
+        "success": True,
+        "channelTested": channel,
+        "speed": speed,
+        "durationSec": duration,
+        "direction": direction,
+        "motorStatus": motor.get_status()
+    })
+
 def apply_model_guidance_to_manual_command(steering=0.0, throttle=0.0, action=None, speed=100.0):
     """
     Applies the YOLOv8-seg pothole perception model to manual driver commands (ADAS / Active Avoidance).

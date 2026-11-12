@@ -192,6 +192,36 @@ class MotorController:
             self._apply_raw_outputs(0, 0, 0, 0, 0.0, 0.0, was_stopped=False)
             logger.info("[Action] STOP ALL 4 MOTORS")
 
+    def left_side_only(self, speed=100.0, forward=True):
+        """Runs ONLY the Left Motor Pair (Channel A: OUT1/OUT2, ENA) while Right is completely OFF."""
+        spd = max(0.0, min(100.0, float(speed)))
+        with self._lock:
+            self.is_emergency_stopped = False
+            self.last_command_time = time.time()
+            was_stopped = not self.is_driving
+            self.is_driving = True
+            self.current_action = "left_only"
+            self.current_throttle = (spd / 100.0) if forward else -(spd / 100.0)
+            self.current_steering = -1.0
+            in1, in2 = (1, 0) if forward else (0, 1)
+            self._apply_raw_outputs(in1, in2, 0, 0, spd, 0.0, was_stopped=was_stopped)
+            logger.info(f"[Diagnostic] LEFT MOTORS ONLY @ {spd:.0f}% (Forward={forward})")
+
+    def right_side_only(self, speed=100.0, forward=True):
+        """Runs ONLY the Right Motor Pair (Channel B: OUT3/OUT4, ENB) while Left is completely OFF."""
+        spd = max(0.0, min(100.0, float(speed)))
+        with self._lock:
+            self.is_emergency_stopped = False
+            self.last_command_time = time.time()
+            was_stopped = not self.is_driving
+            self.is_driving = True
+            self.current_action = "right_only"
+            self.current_throttle = (spd / 100.0) if forward else -(spd / 100.0)
+            self.current_steering = 1.0
+            in3, in4 = (1, 0) if forward else (0, 1)
+            self._apply_raw_outputs(0, 0, in3, in4, 0.0, spd, was_stopped=was_stopped)
+            logger.info(f"[Diagnostic] RIGHT MOTORS ONLY @ {spd:.0f}% (Forward={forward})")
+
     def execute_action(self, action: str, speed=None):
         """Convenience method to execute action by name string."""
         act = action.strip().lower()
@@ -203,6 +233,10 @@ class MotorController:
             self.left(speed)
         elif act in ("right", "r"):
             self.right(speed)
+        elif act in ("left_only", "left_side", "lo"):
+            self.left_side_only(speed or 100.0)
+        elif act in ("right_only", "right_side", "ro"):
+            self.right_side_only(speed or 100.0)
         elif act in ("stop", "halt", "brake", "s"):
             self.stop()
         else:
