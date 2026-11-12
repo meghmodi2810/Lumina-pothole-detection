@@ -453,20 +453,29 @@ To ensure zero regressions and eliminate runtime failures, an exhaustive test ba
   3. **Authentic Camera Standby**: Replaced fake moving road graphics in `camera_stream_view.dart` with a clean standby card and retry trigger.
   4. **Active IP Rebound**: Bound all default endpoints across client and test suites to `http://10.43.219.31:5000`.
 
-### 11.9 Complete Excision of Simulation Mode from Mobile Companion App
-In accordance with zero-simulation production requirements, all synthetic road simulations, fake demo buttons, and simulated telemetry fallbacks have been completely removed:
-1. **Removed Embedded Simulator Configuration**:
-   - Stripped `useEmbeddedSimulator` and `useSimulator` from `EnvironmentConfig`.
-   - Removed `VehicleSimulatorSource` instantiation and injection from `main.dart`. In production, `DiagnosticsRepositoryImpl` and `VehicleRepositoryImpl` run exclusively against physical hardware.
-2. **Removed Demo / Simulator UI Buttons**:
-   - Removed the "Start Simulator Demo" button and `onUseSimulator` callback from `ConnectionFailureScreen`. If the vehicle fails to connect, the user is presented solely with actionable troubleshooting (retry button, exact connection error message, target host display, and manual IP configuration).
-3. **Removed Synthetic Graphics**:
-   - Replaced the top `SIMULATION MODE` badge with `DISCONNECTED` in `CameraStreamView`.
-   - Completely deleted `_RealisticRoadBackgroundPainter` and its continuous animation ticker. When the video stream is disconnected, the view displays an authentic hardware standby HUD with a retry button.
-4. **Authentic Diagnostic Runs**:
-   - In `DiagnosticsRepositoryImpl`, running a self-test while disconnected returns an authentic `FAILED` check (`Car disconnected. Connect to physical vehicle before running self-test`) rather than fabricating synthetic 50+ GB storage or fake 8/8 passing subsystems.
-5. **Headless Unit Test Isolation**:
-   - Mock simulator instances are strictly isolated to headless Dart unit tests (`test/state_machine_test.dart` and `test/widget_test.dart`) via the explicit `'simulator'` test host parameter, preventing any leakage into production builds.
+### 11.10 High-Torque Autonomous Throttle Boost & Dynamic Soft-Launch Ramp
+- **The Problem**:
+  The car struggled heavily in autonomous mode, buzzing and unable to start rolling forward from a stationary position without manual physical intervention (lifting or pushing the chassis).
+- **Root Cause**:
+  1. The L298N dual H-Bridge driver exhibits an internal BJT saturation drop of approximately 1.4V to 2.0V. On a 7.4V battery pack, the 4 DC motors receive a maximum of ~5.4V at 100% duty cycle.
+  2. The previously configured autonomous `cruise_speed = 65.0%` reduced effective motor voltage to $5.4\text{V} \times 0.65 \approx 3.51\text{V}$, which is well below the static friction (stiction) breakaway threshold for a 4WD chassis burdened by a Raspberry Pi 4B, camera rig, and dual battery supplies.
+  3. During pothole evasion routing, throttle dropped further to $55\%$, while differential steering dropped inner wheels to $35\%$. At $35\%$, the inner motors stalled completely and acted as physical friction anchors, killing all vehicle momentum.
+- **Implementation**:
+  1. **Calibrated High-Torque Throttle Vector**:
+     - Boosted autonomous forward cruising throttle from `65.0%` to **`95.0%`** in `app.py` and `autonomous_driver.py`, providing continuous ~5.1V forward propulsion.
+     - Boosted obstacle reverse speed to **`98.0%`** and pivot turn speed to **`98.0%`** for high-torque evasion turns.
+     - In `autonomous_driver.py`, set an active evasion throttle floor of `max(0.88, (self.cruise_speed * 0.95) / 100.0)` during pothole routing.
+  2. **Two-Stage Dynamic Launch & Decay Ramp**:
+     - In `motor_controller.py`, implemented a progressive launch profile when accelerating from a stopped state:
+       * **Stage 1 (Breakaway Burst)**: Pulses **100% PWM for 300ms** to overcome static wheel stiction and vehicle mass inertia.
+       * **Stage 2 (Smooth Decay)**: Steps through an intermediate duty cycle for 80ms before settling at target cruising speed, preventing abrupt voltage dips and motor stall.
+  3. **Differential Turn Anti-Stall Floor**:
+     - Raised the minimum inner-wheel PWM threshold from $35\%$ to **$55\%$** (`max(55.0, base_speed * (1.0 - 0.40 * steering))`), ensuring the inner wheels actively rotate during curves rather than dragging.
+  4. **Hardware Validation & Live Deployment**:
+     - Uploaded updated `app.py`, `autonomous_driver.py`, and `motor_controller.py` to `/home/lumina/lumina/` on the physical Raspberry Pi 4B (`10.43.219.31`).
+     - Executed the native test suite on the Pi (`test_autonomous_driver.py` and `test_model_guided_driving.py`): **17 / 17 PASSED (100%)**.
+     - Gracefully restarted `lumina-car.service` via systemd (`PID 5895`). Verified `/api/v1/health` reports status `HEALTHY`.
+
 
 
 

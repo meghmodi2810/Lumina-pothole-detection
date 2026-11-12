@@ -27,9 +27,9 @@ DEFAULT_ECHO_PIN = 26
 DEFAULT_STOP_DISTANCE_CM = 20.0       # Stop if obstacle closer than 20cm
 DEFAULT_BACKOFF_DISTANCE_CM = 15.0    # Reverse slightly if closer than 15cm
 DEFAULT_CLEAR_DISTANCE_CM = 26.0      # Path considered clear to cruise
-DEFAULT_CRUISE_SPEED = 78.0           # Smooth forward speed pct with stiction breakout
-DEFAULT_REVERSE_SPEED = 85.0          # High-torque reverse
-DEFAULT_TURN_SPEED = 88.0             # High-torque skid steer turn
+DEFAULT_CRUISE_SPEED = 95.0           # High-torque forward cruise speed (prevents low-voltage motor stall)
+DEFAULT_REVERSE_SPEED = 98.0          # High-torque reverse
+DEFAULT_TURN_SPEED = 98.0             # High-torque skid steer turn
 DEFAULT_REVERSE_DURATION = 0.70       # Full 0.70s reverse (~12cm clearance)
 DEFAULT_TURN_PULSE_DURATION = 0.70    # Full 0.70s pivot turn (~45-60 deg)
 DEFAULT_MAX_AVOID_ATTEMPTS = 5        # Max failed turn attempts before halting in blocked state
@@ -330,8 +330,8 @@ class AutonomousDriver:
                             time.sleep(0.1)
                         elif evasion_mode in ("EVADE_LEFT", "EVADE_RIGHT"):
                             steer = float(ai_plan.get("steering", 0.0))
-                            # Keep sufficient PWM (85% of cruise speed) during evasion to prevent stalling
-                            throttle_norm = (self.cruise_speed * 0.85) / 100.0
+                            # Keep high PWM (minimum 88%) during evasion to prevent stalling under load
+                            throttle_norm = max(0.88, (self.cruise_speed * 0.95) / 100.0)
                             logger.info(f"[Vision Evasion] Routing around pothole: {evasion_mode} (steer={steer:+.2f})")
                             self.motor.set_drive_command(steer, throttle_norm)
                             time.sleep(0.06)

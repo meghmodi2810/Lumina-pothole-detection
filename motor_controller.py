@@ -51,8 +51,8 @@ class MotorController:
         self.in4 = in4
         self.enb = enb
         self.pwm_frequency = pwm_frequency
-        self.default_speed_pct = 85.0
-        self.min_start_pwm = 50
+        self.default_speed_pct = float(default_speed_pct)
+        self.min_start_pwm = 60
         self.max_speed_ceiling = 1.0
         self.watchdog_timeout_sec = watchdog_timeout_sec
 
@@ -236,12 +236,12 @@ class MotorController:
             self.is_driving = True
 
             # Calibrated differential drive speed based on throttle with stiction minimum
-            base_speed = max(40.0, min(100.0, abs(throttle) * 100.0))
+            base_speed = max(65.0, min(100.0, abs(throttle) * 100.0))
             if steering >= 0:
                 left_speed = base_speed
-                right_speed = max(35.0, base_speed * (1.0 - 0.65 * steering))
+                right_speed = max(55.0, base_speed * (1.0 - 0.40 * steering))
             else:
-                left_speed = max(35.0, base_speed * (1.0 - 0.65 * abs(steering)))
+                left_speed = max(55.0, base_speed * (1.0 - 0.40 * abs(steering)))
                 right_speed = base_speed
 
             is_forward = throttle >= 0
@@ -271,13 +271,20 @@ class MotorController:
                 is_right_active = bool(in3_val or in4_val)
 
                 if getattr(self, '_has_hardware_pwm', False) and self.pwm_left is not None and self.pwm_right is not None:
-                    # Stiction Buster Kickstart: Burst 100% PWM for 180ms when starting from stopped
+                    # Dynamic Launch Kickstart: Burst 100% PWM for 300ms when starting from stopped,
+                    # then decay to overcome static friction and inertia without stalling.
                     if was_stopped and (is_left_active or is_right_active) and (left_speed > 15.0 or right_speed > 15.0):
                         burst_l = 100.0 if is_left_active else 0.0
                         burst_r = 100.0 if is_right_active else 0.0
                         self.pwm_left.ChangeDutyCycle(burst_l)
                         self.pwm_right.ChangeDutyCycle(burst_r)
-                        time.sleep(0.18)
+                        time.sleep(0.30)
+                        # Smooth decay step before setting continuous target
+                        mid_l = max(left_speed, (100.0 + left_speed) / 2.0) if is_left_active else 0.0
+                        mid_r = max(right_speed, (100.0 + right_speed) / 2.0) if is_right_active else 0.0
+                        self.pwm_left.ChangeDutyCycle(mid_l)
+                        self.pwm_right.ChangeDutyCycle(mid_r)
+                        time.sleep(0.08)
 
                     target_l = max(0.0, min(100.0, float(left_speed))) if is_left_active else 0.0
                     target_r = max(0.0, min(100.0, float(right_speed))) if is_right_active else 0.0

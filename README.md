@@ -284,7 +284,7 @@ For full documentation on the physical edge car architecture, see [AUTONOMOUS_HA
 - Surfaces actionable subsystem failure diagnostics if any sensor or bus is degraded.
 
 ### 8.2 Closed-Loop Autonomous Driving (`/api/v1/vehicle/mode`)
-- **Situation A (Clear Path)**: Cruises forward at calibrated 78% PWM duty cycle with **180ms Kickstart Breakout Pulse** to overcome static floor friction.
+- **Situation A (Clear Path)**: Cruises forward at high-torque 95% PWM duty cycle with a **300ms Breakaway Kickstart Pulse & Progressive Decay** to overcome static floor friction and vehicle inertia without stalling.
 - **Situation B (Obstacle Detected)**: Immediate motor halt when distance $\le 20.0\text{ cm}$.
 - **Situation C (Intelligent Evasion)**: Backs up 0.70s if close ($< 15.0\text{ cm}$), adaptively picks turn direction with a 0.70s high-torque pivot turn (88% PWM), avoiding repetitive loops, and verifies clearance $\ge 26.0\text{ cm}$.
 - **Situation D (Trapped / Blocked)**: Halts in `BLOCKED_WAITING` after 5 failed turns, resuming automatically when path clears or immediately upon tapping Resume in the mobile app.

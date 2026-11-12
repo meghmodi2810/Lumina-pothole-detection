@@ -622,6 +622,7 @@ motor = MotorController(
     in1=17, in2=27, ena=18,
     in3=22, in4=23, enb=12,
     pwm_frequency=100,
+    default_speed_pct=100.0,
     max_speed_ceiling=1.0,
     watchdog_timeout_sec=0.6
 )
@@ -631,6 +632,7 @@ def get_current_ai_plan():
         return dict(latest_ai_plan)
 
 # Autonomous Driving & Intelligent Obstacle Avoidance Engine (Fused AI Vision + Ultrasonic Safety)
+# Calibrated for high-torque stiction breakout and sustained momentum
 auto_driver = AutonomousDriver(
     motor_controller=motor,
     plan_provider=get_current_ai_plan,
@@ -639,9 +641,9 @@ auto_driver = AutonomousDriver(
     stop_dist_cm=28.0,
     backoff_dist_cm=18.0,
     clear_dist_cm=35.0,
-    cruise_speed=65.0,
-    reverse_speed=70.0,
-    turn_speed=75.0
+    cruise_speed=95.0,
+    reverse_speed=98.0,
+    turn_speed=98.0
 )
 
 # Vehicle Autonomy State
