@@ -748,6 +748,17 @@
                             <span id="inferenceSpeed">~14ms</span>
                         </div>
                     </div>
+
+                    <!-- Captured Hazard Snapshots -->
+                    <div class="gauge-card" style="margin-top: 0.75rem;">
+                        <div class="gauge-card-header">
+                            <span class="gauge-title">Captured Hazard Snapshots</span>
+                            <span style="font-size: 0.72rem; color: var(--amber); font-family: var(--font-mono);" id="potholeTotalCount">0 DETECTED</span>
+                        </div>
+                        <div id="potholeSnapshotGallery" style="display: flex; gap: 8px; overflow-x: auto; padding: 6px 0; min-height: 80px;">
+                            <div style="font-size: 0.75rem; color: var(--text-dim); padding: 8px 0;">No road hazards logged yet this run.</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -936,6 +947,36 @@
                 document.getElementById('hazardStatus').innerText = count > 0 ? 'Active Evasion Enacted' : 'Road Surface Nominal';
             });
         }
+
+        let lastPotholeCount = -1;
+        function updatePotholeGallery() {
+            fetch('/api/v1/potholes')
+            .then(r => r.json())
+            .then(data => {
+                const total = data.totalCount || 0;
+                const counter = document.getElementById('potholeTotalCount');
+                if (counter) counter.innerText = total + ' DETECTED';
+                if (total !== lastPotholeCount && data.potholes && data.potholes.length > 0) {
+                    lastPotholeCount = total;
+                    const gallery = document.getElementById('potholeSnapshotGallery');
+                    if (!gallery) return;
+                    gallery.innerHTML = '';
+                    data.potholes.slice(0, 6).forEach(p => {
+                        const div = document.createElement('div');
+                        div.style = "flex: 0 0 95px; cursor: pointer; text-align: center;";
+                        div.title = "Click to view full resolution snapshot";
+                        div.onclick = () => window.open(p.imageUrl || ('/api/v1/potholes/snapshot/' + p.id), '_blank');
+                        div.innerHTML = `
+                            <img src="${p.imageUrl || ('/api/v1/potholes/snapshot/' + p.id)}" style="width: 95px; height: 58px; object-fit: cover; border-radius: 4px; border: 1px solid var(--amber);" alt="Snapshot">
+                            <div style="font-size: 0.65rem; font-family: var(--font-mono); color: var(--text-main); margin-top: 2px;">${p.id}</div>
+                            <div style="font-size: 0.60rem; color: var(--amber); font-weight: 700;">${p.severity} • ${(p.confidence*100).toFixed(0)}%</div>
+                        `;
+                        gallery.appendChild(div);
+                    });
+                }
+            }).catch(() => {});
+        }
+        setInterval(updatePotholeGallery, 3000);
 
         // Analyze Driving Video
         function analyzeVideo() {

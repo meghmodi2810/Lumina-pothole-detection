@@ -563,6 +563,47 @@ To ensure zero regressions and eliminate runtime failures, an exhaustive test ba
      - **Step 2**: Power ON the LUMINA vehicle. Allow 30 seconds for green status LED to light up and Wi-Fi to associate.
      - **Step 3**: Launch LUMINA Companion App. The app automatically senses the active subnet, scans for the vehicle, and connects with 0 manual typing.
 
+---
+
+## 12. Companion App Deep-Dive Overhaul, Real Pothole Snapshotting & Web Parity (November 2026)
+
+### 12.1 Real Pothole Image Snapshot Capture & Retrieval Pipeline
+- **Problem**: Previously, `PotholeDetailScreen` in Flutter rendered a synthetic cartoon crater using a custom canvas painter rather than real captured camera frames. The car server recorded hazard detections in memory but never stored the image frames to disk.
+- **Solution**:
+  1. **Edge Server Snapshot Capture (`app.py`)**:
+     - Whenever YOLOv8 detects a road hazard with confidence $\ge 0.25$, the detection worker automatically writes the annotated frame to `snapshots/{pothole_id}.jpg`.
+     - Exposes `/api/v1/potholes/snapshot/<pothole_id>` (and `/snapshots/<filename>`) to serve the full-resolution JPEG frames over HTTP.
+     - Adds `/api/v1/potholes` returning the full catalog of logged road hazards and their snapshot URLs.
+  2. **Mobile & Web Snapshot Visualizer (`pothole_detail_screen.dart`)**:
+     - Upgraded to an authentic image viewport using `Image.network` with smooth loading shimmer, fallback to cached offline assets, and full interactive pinch-to-zoom / tap-to-inspect modal.
+     - Retains AI polygon/box reticles, severity badges, and metadata chips.
+  3. **Interactive Pothole Event Toast (`pothole_event_dialog.dart`)**:
+     - Tapping the banner immediately opens `PotholeDetailScreen` for the active hazard.
+     - Automatically persists detected potholes to `potholeRepo.recordPothole()` so they persist in the Map and Trips screens.
+
+### 12.2 Offline Companion Mode & Exploration Bypassing
+- **Problem**: When testing the mobile app or web version without the physical car connected, the app was trapped on the connection or self-test failure screen.
+- **Solution**:
+  - Added an **"EXPLORE COCKPIT OFFLINE (COMPANION MODE)"** button on both `VehicleConnectionScreen` and `ConnectionFailureScreen`.
+  - Added **"PROCEED IN RESTRICTED MODE"** on `StartupSelfTestScreen`.
+  - In `CameraStreamView`, when the car is offline, users can toggle **"ACTIVATE DEMO ROAD VISION FEED"** which runs an animated perspective road corridor with active AI perception reticles, trajectory ribbon, and simulated pothole detection.
+  - Added a **"TEST HAZARD SNAP"** button in `DriveScreen` to test real pothole alerting and snapshot inspection immediately without the car.
+
+### 12.3 Dynamic Trip Recording & Real JSON Export
+- Driving sessions (manual or autonomous) now automatically record duration, distance, battery usage, route breadcrumbs, and potholes.
+- On session stop, a real `Trip` is created and stored in `TripRepository`.
+- `TripDetailScreen` features real telemetry JSON export to system clipboard and interactive preview modal.
+
+### 12.4 Mathematical Map GPS Projection
+- Replaced arbitrary diagonal positioning in `MapScreen` with true relative GPS coordinate conversion:
+  $$\Delta x = \Delta\text{Lon} \cdot 111139 \cdot \cos(\text{Lat}), \quad \Delta y = \Delta\text{Lat} \cdot 111139$$
+  projected from vehicle center with radar range rings.
+
+### 12.5 Web & Cross-Platform Parity
+- Web runtime crashes prevented by guarding `dart:io` `NetworkInterface` and `RawDatagramSocket` calls with `if (!kIsWeb)`.
+- Verified clean compilation with `flutter build web --no-tree-shake-icons`.
+- Web Dashboard (`templates/index.html`) updated with real-time Captured Hazard Snapshots gallery.
+
 
 
 

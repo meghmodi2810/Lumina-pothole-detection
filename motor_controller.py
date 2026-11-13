@@ -67,6 +67,7 @@ class MotorController:
         self.right_pwm_pct = 0.0
         self.is_emergency_stopped = False
         self.is_driving = False
+        self.invert_direction = False
 
         self.last_command_time = time.time()
         self._lock = threading.Lock()
@@ -74,6 +75,17 @@ class MotorController:
 
         self._init_gpio()
         self._start_watchdog()
+
+    def set_direction_inversion(self, inverted: bool):
+        """Inverts front and rear chassis direction (180 degree flip)."""
+        with self._lock:
+            self.invert_direction = bool(inverted)
+            logger.info(f"[Inversion] Chassis direction inverted: {self.invert_direction}")
+
+    def get_direction_inversion(self) -> bool:
+        """Returns True if chassis direction is inverted (front <-> rear)."""
+        with self._lock:
+            return self.invert_direction
 
     def _init_gpio(self):
         if self.is_hardware:
@@ -122,37 +134,45 @@ class MotorController:
     # 4-DIRECTIONAL TACTILE CONTROLS (Straight, Reverse, Left, Right, Stop)
     # -------------------------------------------------------------------------
     def forward(self, speed=None):
-        """Drives ALL 4 WHEELS straight forward with stiction breakout kickstart."""
+        """Drives ALL 4 WHEELS straight forward (or backward if inverted) with stiction breakout kickstart."""
         spd = max(0.0, min(100.0, float(speed))) if speed is not None else self.default_speed_pct
         with self._lock:
             self.is_emergency_stopped = False
             self.last_command_time = time.time()
             was_stopped = not self.is_driving
             self.is_driving = True
-            self.current_action = "forward"
+            self.current_action = "forward" if not self.invert_direction else "forward (inverted)"
             self.current_throttle = spd / 100.0
             self.current_steering = 0.0
-            # IN1=HIGH, IN2=LOW (Left Forward) | IN3=HIGH, IN4=LOW (Right Forward)
-            self._apply_raw_outputs(1, 0, 1, 0, spd, spd, was_stopped=was_stopped)
-            logger.info(f"[Action] ALL 4 WHEELS FORWARD @ {spd:.0f}% POWER (Kickstart: {was_stopped})")
+            if not self.invert_direction:
+                # Normal: IN1=1, IN2=0 (Left Forward) | IN3=1, IN4=0 (Right Forward)
+                self._apply_raw_outputs(1, 0, 1, 0, spd, spd, was_stopped=was_stopped)
+            else:
+                # Inverted: Chassis drives in reverse (physical rear becomes forward)
+                self._apply_raw_outputs(0, 1, 0, 1, spd, spd, was_stopped=was_stopped)
+            logger.info(f"[Action] ALL 4 WHEELS FORWARD @ {spd:.0f}% POWER (Inverted={self.invert_direction}, Kickstart={was_stopped})")
 
     def backward(self, speed=None):
-        """Drives ALL 4 WHEELS straight backward with stiction breakout kickstart."""
+        """Drives ALL 4 WHEELS straight backward (or forward if inverted) with stiction breakout kickstart."""
         spd = max(0.0, min(100.0, float(speed))) if speed is not None else self.default_speed_pct
         with self._lock:
             self.is_emergency_stopped = False
             self.last_command_time = time.time()
             was_stopped = not self.is_driving
             self.is_driving = True
-            self.current_action = "backward"
+            self.current_action = "backward" if not self.invert_direction else "backward (inverted)"
             self.current_throttle = -(spd / 100.0)
             self.current_steering = 0.0
-            # IN1=LOW, IN2=HIGH (Left Reverse) | IN3=LOW, IN4=HIGH (Right Reverse)
-            self._apply_raw_outputs(0, 1, 0, 1, spd, spd, was_stopped=was_stopped)
-            logger.info(f"[Action] ALL 4 WHEELS BACKWARD @ {spd:.0f}% POWER (Kickstart: {was_stopped})")
+            if not self.invert_direction:
+                # Normal: IN1=0, IN2=1 (Left Reverse) | IN3=0, IN4=1 (Right Reverse)
+                self._apply_raw_outputs(0, 1, 0, 1, spd, spd, was_stopped=was_stopped)
+            else:
+                # Inverted: Chassis drives forward
+                self._apply_raw_outputs(1, 0, 1, 0, spd, spd, was_stopped=was_stopped)
+            logger.info(f"[Action] ALL 4 WHEELS BACKWARD @ {spd:.0f}% POWER (Inverted={self.invert_direction}, Kickstart={was_stopped})")
 
     def left(self, speed=None):
-        """Turn / spin left (Right wheels drive forward, Left wheels reverse)."""
+        """Turn / spin left (swapped if inverted)."""
         spd = max(0.0, min(100.0, float(speed))) if speed is not None else self.default_speed_pct
         with self._lock:
             self.is_emergency_stopped = False
@@ -162,12 +182,16 @@ class MotorController:
             self.current_action = "left"
             self.current_throttle = 0.0
             self.current_steering = -(spd / 100.0)
-            # Spin Turn: Left Reverse (0, 1), Right Forward (1, 0)
-            self._apply_raw_outputs(0, 1, 1, 0, spd, spd, was_stopped=was_stopped)
-            logger.info(f"[Action] 4WD TURN LEFT @ {spd:.0f}% POWER (Kickstart: {was_stopped})")
+            if not self.invert_direction:
+                # Spin Turn: Left Reverse (0, 1), Right Forward (1, 0)
+                self._apply_raw_outputs(0, 1, 1, 0, spd, spd, was_stopped=was_stopped)
+            else:
+                # Inverted Spin Turn: Left Forward (1, 0), Right Reverse (0, 1)
+                self._apply_raw_outputs(1, 0, 0, 1, spd, spd, was_stopped=was_stopped)
+            logger.info(f"[Action] 4WD TURN LEFT @ {spd:.0f}% POWER (Inverted={self.invert_direction}, Kickstart={was_stopped})")
 
     def right(self, speed=None):
-        """Turn / spin right (Left wheels drive forward, Right wheels reverse)."""
+        """Turn / spin right (swapped if inverted)."""
         spd = max(0.0, min(100.0, float(speed))) if speed is not None else self.default_speed_pct
         with self._lock:
             self.is_emergency_stopped = False
@@ -177,9 +201,13 @@ class MotorController:
             self.current_action = "right"
             self.current_throttle = 0.0
             self.current_steering = spd / 100.0
-            # Spin Turn: Left Forward (1, 0), Right Reverse (0, 1)
-            self._apply_raw_outputs(1, 0, 0, 1, spd, spd, was_stopped=was_stopped)
-            logger.info(f"[Action] 4WD TURN RIGHT @ {spd:.0f}% POWER (Kickstart: {was_stopped})")
+            if not self.invert_direction:
+                # Spin Turn: Left Forward (1, 0), Right Reverse (0, 1)
+                self._apply_raw_outputs(1, 0, 0, 1, spd, spd, was_stopped=was_stopped)
+            else:
+                # Inverted Spin Turn: Left Reverse (0, 1), Right Forward (1, 0)
+                self._apply_raw_outputs(0, 1, 1, 0, spd, spd, was_stopped=was_stopped)
+            logger.info(f"[Action] 4WD TURN RIGHT @ {spd:.0f}% POWER (Inverted={self.invert_direction}, Kickstart={was_stopped})")
 
     def stop(self):
         """Stops all motor outputs immediately."""
@@ -256,6 +284,11 @@ class MotorController:
 
             throttle = max(-1.0, min(1.0, float(throttle)))
             steering = max(-1.0, min(1.0, float(steering)))
+
+            # If chassis orientation is inverted (180 degree flip), reverse throttle and steering
+            if self.invert_direction:
+                throttle = -throttle
+                steering = -steering
 
             self.current_steering = steering
             self.current_throttle = throttle

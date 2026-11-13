@@ -271,6 +271,9 @@ Actively restarts or wakes up the edge camera pipeline (CSI Picamera2 or V4L2 US
 ### `POST /api/v1/diagnostics/motor/test`
 Runs isolated channel diagnostic pulses (`{"channel": "left" | "right" | "both", "duration": 1.5, "speed": 100.0, "direction": "forward" | "backward"}`) to identify dead, weak, or reverse-wired motors.
 
+### `GET /api/v1/potholes` & `GET /api/v1/potholes/snapshot/<pothole_id>`
+Returns chronological road hazard inventory with physical metrics and serves full-resolution camera frame JPEG snapshots captured by edge perception during driving.
+
 ### UDP Auto-Discovery Beacon (`Port 5005`)
 Broadcasts `DISCOVER_LUMINA` over UDP `255.255.255.255:5005`. The edge vehicle discovery daemon instantly replies with IP and port configuration (`{"service": "LUMINA_CAR", "vehicleId": "LUMINA-01", "port": 5000, "status": "HEALTHY"}`), ensuring automatic zero-configuration binding when host DHCP subnets rotate.
 

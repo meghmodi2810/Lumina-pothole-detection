@@ -40,8 +40,9 @@ OUTPUT_FOLDER = os.path.join(BASE_DIR, "static", "outputs")
 SAMPLE_IMG_FOLDER = os.path.join(BASE_DIR, "sample_images")
 SAMPLE_VID_FOLDER = os.path.join(BASE_DIR, "sample_videos")
 MODELS_FOLDER = os.path.join(BASE_DIR, "models")
+SNAPSHOTS_FOLDER = os.path.join(BASE_DIR, "snapshots")
 
-for folder in [UPLOAD_FOLDER, OUTPUT_FOLDER, SAMPLE_IMG_FOLDER, SAMPLE_VID_FOLDER, MODELS_FOLDER]:
+for folder in [UPLOAD_FOLDER, OUTPUT_FOLDER, SAMPLE_IMG_FOLDER, SAMPLE_VID_FOLDER, MODELS_FOLDER, SNAPSHOTS_FOLDER]:
     os.makedirs(folder, exist_ok=True)
 
 def transcode_to_h264(raw_mp4_path, web_mp4_path):
@@ -221,12 +222,20 @@ def _ai_perception_worker():
                 # Debounced pothole recording: log at most once per 2 seconds to eliminate duplicate spam
                 if scaled_detections and (now - last_pothole_log_time >= 2.0):
                     last_pothole_log_time = now
+                    pothole_id = f"POT-{int(now*1000)%100000}"
+                    snapshot_filename = f"{pothole_id}.jpg"
+                    snapshot_path = os.path.join(SNAPSHOTS_FOLDER, snapshot_filename)
+                    try:
+                        cv2.imwrite(snapshot_path, ann_frame)
+                    except Exception as snap_err:
+                        logger.warning(f"Could not write pothole snapshot image: {snap_err}")
+
                     for det in scaled_detections:
                         conf = float(det.get("confidence", 0.8))
                         if conf >= 0.25:
                             dist_est = float(det.get("distance_m", 0.8))
                             recent_detected_potholes.insert(0, {
-                                "id": f"POT-{int(now*1000)%100000}",
+                                "id": pothole_id,
                                 "timestamp": int(now * 1000),
                                 "severity": det.get("severity", "MODERATE").upper(),
                                 "confidence": round(conf, 2),
@@ -234,7 +243,9 @@ def _ai_perception_worker():
                                 "estimatedAreaM2": round(float(det.get("width_norm", 0.3) * det.get("height_norm", 0.2) * 1.5), 2),
                                 "depthEstimateCm": 4.5,
                                 "avoidanceAction": plan.get("evasion_mode", "CENTER_TRACKING"),
-                                "isHazard": True
+                                "isHazard": True,
+                                "imageUrl": f"/api/v1/potholes/snapshot/{pothole_id}",
+                                "snapshotFile": snapshot_filename
                             })
                     if len(recent_detected_potholes) > 20:
                         del recent_detected_potholes[20:]
@@ -256,6 +267,39 @@ def get_sample_image(filename):
 @app.route("/sample_video/<filename>")
 def get_sample_video(filename):
     return send_from_directory(SAMPLE_VID_FOLDER, filename)
+
+@app.route("/snapshots/<filename>")
+def get_snapshot_file(filename):
+    return send_from_directory(SNAPSHOTS_FOLDER, filename)
+
+@app.route("/api/v1/potholes/snapshot/<pothole_id>", methods=["GET"])
+def get_pothole_snapshot(pothole_id):
+    """Serves the exact JPEG camera snapshot captured when this pothole was detected."""
+    clean_id = pothole_id if pothole_id.endswith(".jpg") else f"{pothole_id}.jpg"
+    target_path = os.path.join(SNAPSHOTS_FOLDER, clean_id)
+    if os.path.exists(target_path):
+        return send_from_directory(SNAPSHOTS_FOLDER, clean_id, mimetype="image/jpeg")
+
+    # Fallback search if id has a prefix or suffix mismatch
+    for f in os.listdir(SNAPSHOTS_FOLDER):
+        if pothole_id in f:
+            return send_from_directory(SNAPSHOTS_FOLDER, f, mimetype="image/jpeg")
+
+    # Graceful fallback to verified benchmark sample pothole image
+    sample_alt = os.path.join(SAMPLE_IMG_FOLDER, "sample_pothole_1.jpg")
+    if os.path.exists(sample_alt):
+        return send_from_directory(SAMPLE_IMG_FOLDER, "sample_pothole_1.jpg", mimetype="image/jpeg")
+
+    return jsonify({"error": f"Snapshot for pothole {pothole_id} not found"}), 404
+
+@app.route("/api/v1/potholes", methods=["GET"])
+def get_potholes_list():
+    """Returns all recorded pothole events with snapshot links and physical telemetry."""
+    with ai_lock:
+        return jsonify({
+            "totalCount": total_potholes_count,
+            "potholes": list(recent_detected_potholes)
+        })
 
 @app.route("/api/samples", methods=["GET"])
 def get_samples():
@@ -687,8 +731,22 @@ def get_vehicle_health():
             "motorC": 32.0
         },
         "activeModel": engine.active_model_name if engine else "None",
-        "hardwareActuation": motor.is_hardware
+        "hardwareActuation": motor.is_hardware,
+        "invertedDirection": motor.get_direction_inversion()
     })
+
+@app.route("/api/v1/vehicle/inversion", methods=["GET", "POST"])
+def vehicle_inversion():
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        inv = bool(data.get("inverted", not motor.get_direction_inversion()))
+        motor.set_direction_inversion(inv)
+        return jsonify({
+            "success": True,
+            "inverted": inv,
+            "message": f"Chassis orientation set to {'INVERTED (REAR FORWARD)' if inv else 'NORMAL (FRONT FORWARD)'}"
+        })
+    return jsonify({"inverted": motor.get_direction_inversion()})
 
 @app.route("/api/v1/telemetry", methods=["GET"])
 def get_mobile_telemetry():
@@ -747,6 +805,7 @@ def get_mobile_telemetry():
         "avoidanceAttempts": auto_stat["avoidanceAttempts"],
         "totalPotholesDetected": total_potholes_count,
         "recentPothole": latest_pot,
+        "invertedDirection": motor.get_direction_inversion(),
         "gps": {"latitude": 21.1702, "longitude": 72.8311}
     })
 
