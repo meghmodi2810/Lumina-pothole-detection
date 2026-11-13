@@ -289,9 +289,13 @@ For full documentation on the physical edge car architecture, see [AUTONOMOUS_HA
 ### 8.2 Closed-Loop Autonomous Driving (`/api/v1/vehicle/mode`)
 - **Situation A (Clear Path)**: Cruises forward at high-torque 95% PWM duty cycle with a **300ms Breakaway Kickstart Pulse & Progressive Decay** to overcome static floor friction and vehicle inertia without stalling.
 - **Situation B (Obstacle Detected)**: Immediate motor halt when distance $\le 20.0\text{ cm}$.
-- **Situation C (Intelligent Evasion)**: Backs up 0.70s if close ($< 15.0\text{ cm}$), adaptively picks turn direction with a 0.70s high-torque pivot turn (88% PWM), avoiding repetitive loops, and verifies clearance $\ge 26.0\text{ cm}$.
+- **Situation C (Intelligent Evasion)**: Backs up 0.70s if close ($< 15.0\text{ cm}$), adaptively picks turn direction with a 0.70s high-torque pivot turn (98% PWM), avoiding repetitive loops, and verifies clearance $\ge 26.0\text{ cm}$.
 - **Situation D (Trapped / Blocked)**: Halts in `BLOCKED_WAITING` after 5 failed turns, resuming automatically when path clears or immediately upon tapping Resume in the mobile app.
-- **Brownout Protection & Stiction Buster**: Modulates hardware PWM on `ENA` (GPIO 18) and `ENB` (GPIO 12), ensuring differential inner wheels never drop below 35% PWM during active turns.
+- **Brownout Protection & Stiction Buster**: Modulates hardware PWM on `ENA` (GPIO 18) and `ENB` (GPIO 12), ensuring differential inner wheels never drop below 55% PWM during active turns, with an inrush current soft-stagger (50ms left channel lead) to prevent multi-motor surge from dropping battery voltage.
+
+### 8.4 Network Resilience & Dynamic Subnet Discovery
+- **Subnet Rotation Mitigation**: Automatically adapts to Android mobile hotspot DHCP randomization across sessions (`10.40.110.x`, `10.43.219.x`, `10.78.252.x`) via active subnet sensing and dual UDP port 5005 discovery.
+- **Wi-Fi Power-Save Elimination**: Permanently disables 802.11 power saving (`powersave = 2`) on the Raspberry Pi 4B to eliminate high-jitter micro-sleeps and socket connection drops.
 
 ### 8.3 Automated Verification & Soak Testing Suite
 Comprehensive automated testing is provided in `tests/`:
