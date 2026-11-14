@@ -650,11 +650,19 @@ Following the principles of `untangle-codebase` from `caldoai/skills`, the entir
   - `DriveAutonomousView` (Landscape) incorporates an integrated action bar with `ENGAGE/STOP AUTONOMOUS CRUISE` and `TEST SNAP` overlaid on the live/demo camera viewport.
   - `CameraStreamView` automatically boots into the perspective dynamic road feed when in companion mode, accelerating and steering in sync with vehicle telemetry.
 
-### 13.6 Full Ecosystem Verification & Parity
+### 13.6 Full Dynamic Cartography & Speed Profile Visualization
+- **Dynamic GPS Breadcrumbs on Map**:
+  - `_LuminaCartographyPainter` in `map_screen.dart` renders real driven GPS trajectory points from `widget.appState.sessionRoutePoints`, updating in real time as the vehicle drives in both live and companion simulator modes.
+  - Interactive multi-tier zoom scaling (1.0x to 16.0x) with concentric distance range rings (10m and 25m) centered on the vehicle's real-time position.
+- **Dynamic Speed Profile on Trip Detail**:
+  - `_TripSpeedProfilePainter` in `trip_detail_screen.dart` renders the exact recorded velocity curve over time from `trip.route`, complete with proportional hazard event pins along the timeline.
+
+### 13.7 Full Ecosystem Verification & Universal Parity
 - **Flutter Mobile & Web**: 17/17 automated unit and integration tests passing (`companion_features_test.dart`, `dual_mode_architecture_test.dart`, `state_machine_test.dart`, `widget_test.dart`).
 - **Static Analysis**: `flutter analyze` reports 0 issues.
 - **Web Build**: `flutter build web --no-tree-shake-icons` succeeds cleanly.
 - **Python Edge Backend**: `app.py`, `motor_controller.py`, `autonomous_driver.py`, `diagnostics_engine.py`, `pothole_detector.py`, `pothole_engine.py` compile with 0 syntax errors.
+- **Snapshot Caching**: `app.py` serves snapshots with `Cache-Control: no-cache, must-revalidate` to prevent stale browser caches across live driving runs.
 
 
 

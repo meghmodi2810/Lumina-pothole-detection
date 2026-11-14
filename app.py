@@ -278,17 +278,24 @@ def get_pothole_snapshot(pothole_id):
     clean_id = pothole_id if pothole_id.endswith(".jpg") else f"{pothole_id}.jpg"
     target_path = os.path.join(SNAPSHOTS_FOLDER, clean_id)
     if os.path.exists(target_path):
-        return send_from_directory(SNAPSHOTS_FOLDER, clean_id, mimetype="image/jpeg")
+        resp = send_from_directory(SNAPSHOTS_FOLDER, clean_id, mimetype="image/jpeg")
+        resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return resp
 
     # Fallback search if id has a prefix or suffix mismatch
-    for f in os.listdir(SNAPSHOTS_FOLDER):
-        if pothole_id in f:
-            return send_from_directory(SNAPSHOTS_FOLDER, f, mimetype="image/jpeg")
+    if os.path.exists(SNAPSHOTS_FOLDER):
+        for f in os.listdir(SNAPSHOTS_FOLDER):
+            if pothole_id in f:
+                resp = send_from_directory(SNAPSHOTS_FOLDER, f, mimetype="image/jpeg")
+                resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+                return resp
 
     # Graceful fallback to verified benchmark sample pothole image
     sample_alt = os.path.join(SAMPLE_IMG_FOLDER, "sample_pothole_1.jpg")
     if os.path.exists(sample_alt):
-        return send_from_directory(SAMPLE_IMG_FOLDER, "sample_pothole_1.jpg", mimetype="image/jpeg")
+        resp = send_from_directory(SAMPLE_IMG_FOLDER, "sample_pothole_1.jpg", mimetype="image/jpeg")
+        resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return resp
 
     return jsonify({"error": f"Snapshot for pothole {pothole_id} not found"}), 404
 

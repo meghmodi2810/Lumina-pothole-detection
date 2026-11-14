@@ -300,6 +300,12 @@ For full documentation on the physical edge car architecture, see [AUTONOMOUS_HA
 - **Subnet Rotation Mitigation**: Automatically adapts to Android mobile hotspot DHCP randomization across sessions (`10.40.110.x`, `10.43.219.x`, `10.78.252.x`) via active subnet sensing and dual UDP port 5005 discovery.
 - **Wi-Fi Power-Save Elimination**: Permanently disables 802.11 power saving (`powersave = 2`) on the Raspberry Pi 4B to eliminate high-jitter micro-sleeps and socket connection drops.
 
+### 8.5 Flutter Mobile & Web Companion Architecture (Universal Dual-Mode Parity)
+- **Zero-Deadlock Offline Companion Mode**: Operates fully autonomously even when physical vehicle hardware is powered down or disconnected. Users can explore the entire HMI, launch self-tests, view live dynamic camera streams, drive with virtual joysticks, and simulate pothole detections.
+- **Dynamic Cartography & Speed Profiles**: Real-time vehicle GPS breadcrumb tracking on precision dark marine maps (`_LuminaCartographyPainter`) and true velocity timelines with hazard pins (`_TripSpeedProfilePainter`).
+- **Authentic Pothole Visualizer**: Bundles authentic road damage frames into local assets, dynamically falling back to authentic imagery if offline, with multi-touch zoom and AI bounding polygon overlays.
+- **Mobile & Web Universal Parity**: The Flutter codebase compiles cleanly and identically for native Android/iOS mobile devices and Web desktop/tablet browsers with responsive layouts.
+
 ### 8.3 Automated Verification & Soak Testing Suite
 Comprehensive automated testing is provided in `tests/`:
 - `python tests/test_physical_hardware.py`: Runs 7/7 physical sensor, bus, and GPIO diagnostics on the Pi.
