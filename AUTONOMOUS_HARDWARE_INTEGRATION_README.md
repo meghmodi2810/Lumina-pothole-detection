@@ -657,8 +657,28 @@ Following the principles of `untangle-codebase` from `caldoai/skills`, the entir
 - **Dynamic Speed Profile on Trip Detail**:
   - `_TripSpeedProfilePainter` in `trip_detail_screen.dart` renders the exact recorded velocity curve over time from `trip.route`, complete with proportional hazard event pins along the timeline.
 
-### 13.7 Full Ecosystem Verification & Universal Parity
-- **Flutter Mobile & Web**: 17/17 automated unit and integration tests passing (`companion_features_test.dart`, `dual_mode_architecture_test.dart`, `state_machine_test.dart`, `widget_test.dart`).
+### 13.7 Persistent Preferences & Desktop/Web Cockpit Keyboard Controls
+- **Cross-Platform Preference Persistence**:
+  - `LuminaAppState` automatically restores and persists user preferences via `SharedPreferences`:
+    - `speedGovernorKmH` (`lumina_speed_governor`)
+    - `headlights` (`lumina_headlights`)
+    - `streamQuality` (`lumina_stream_quality`)
+    - `obstacleSensitivityMeters` (`lumina_obstacle_sensitivity`)
+    - `savedVehicleHost` (`lumina_saved_vehicle_host`)
+  - Ensures settings survive application restarts on Android/iOS and page reloads on Web browsers.
+- **Web & Desktop Keyboard Driving Interface**:
+  - `DriveScreen` integrates full-keyboard hardware actuation mapped to:
+    - `W` / `Up Arrow`: Forward throttle
+    - `S` / `Down Arrow`: Reverse throttle
+    - `A` / `Left Arrow`: Counter-clockwise pivot / left steer
+    - `D` / `Right Arrow`: Clockwise pivot / right steer
+    - `Spacebar`: Immediate hardware / simulation Emergency Stop (`OPERATOR_KEYBOARD_ESTOP`)
+    - Key Release: Smooth automatic stop / deceleration
+- **Hazard Observation Telemetry JSON Export**:
+  - `PotholeDetailScreen` includes a 1-tap telemetry export action to inspect, copy, and share JSON schemas containing geolocations, confidence, depth, and bounding classifications.
+
+### 13.8 Full Ecosystem Verification & Universal Parity
+- **Flutter Mobile & Web**: 21/21 automated unit and integration tests passing (`companion_features_test.dart`, `dual_mode_architecture_test.dart`, `state_machine_test.dart`, `widget_test.dart`, `web_and_preferences_test.dart`).
 - **Static Analysis**: `flutter analyze` reports 0 issues.
 - **Web Build**: `flutter build web --no-tree-shake-icons` succeeds cleanly.
 - **Python Edge Backend**: `app.py`, `motor_controller.py`, `autonomous_driver.py`, `diagnostics_engine.py`, `pothole_detector.py`, `pothole_engine.py` compile with 0 syntax errors.

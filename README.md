@@ -303,8 +303,9 @@ For full documentation on the physical edge car architecture, see [AUTONOMOUS_HA
 ### 8.5 Flutter Mobile & Web Companion Architecture (Universal Dual-Mode Parity)
 - **Zero-Deadlock Offline Companion Mode**: Operates fully autonomously even when physical vehicle hardware is powered down or disconnected. Users can explore the entire HMI, launch self-tests, view live dynamic camera streams, drive with virtual joysticks, and simulate pothole detections.
 - **Dynamic Cartography & Speed Profiles**: Real-time vehicle GPS breadcrumb tracking on precision dark marine maps (`_LuminaCartographyPainter`) and true velocity timelines with hazard pins (`_TripSpeedProfilePainter`).
-- **Authentic Pothole Visualizer**: Bundles authentic road damage frames into local assets, dynamically falling back to authentic imagery if offline, with multi-touch zoom and AI bounding polygon overlays.
-- **Mobile & Web Universal Parity**: The Flutter codebase compiles cleanly and identically for native Android/iOS mobile devices and Web desktop/tablet browsers with responsive layouts.
+- **Authentic Pothole Visualizer & Telemetry Export**: Bundles authentic road damage frames into local assets, dynamically falling back to authentic imagery if offline, with multi-touch zoom, AI bounding polygon overlays, and 1-tap JSON export.
+- **Persistent Preferences & Keyboard Driving Controls**: Automatically stores vehicle configurations (speed governor, headlights, sensitivity, and saved IPs) in persistent storage; includes full desktop/web keyboard shortcuts (`W/A/S/D` or arrows to drive, `Space` for emergency stop).
+- **Mobile & Web Universal Parity**: The Flutter codebase compiles cleanly and identically for native Android/iOS mobile devices and Web desktop/tablet browsers with responsive layouts (21/21 automated tests passing).
 
 ### 8.3 Automated Verification & Soak Testing Suite
 Comprehensive automated testing is provided in `tests/`:
