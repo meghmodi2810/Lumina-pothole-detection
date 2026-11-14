@@ -604,6 +604,59 @@ To ensure zero regressions and eliminate runtime failures, an exhaustive test ba
 - Verified clean compilation with `flutter build web --no-tree-shake-icons`.
 - Web Dashboard (`templates/index.html`) updated with real-time Captured Hazard Snapshots gallery.
 
+---
+
+## 13. Untangle-Codebase Architecture, Dual-Mode Engine & Universal Parity (caldoai/skills)
+
+Following the principles of `untangle-codebase` from `caldoai/skills`, the entire LUMINA ecosystem underwent a comprehensive architectural refactoring to eliminate hidden links, needless coupling, surplus dead code, and placeholder stubs.
+
+### 13.1 Elimination of Hidden Links & Hardcoded Endpoints
+- **Problem**: The IP address `http://10.43.219.31:5000` was hardcoded across 7 distinct files (`main.dart`, `environment_config.dart`, `vehicle_live_source.dart`, `diagnostics_repository_impl.dart`, `vehicle_repository_impl.dart`, `vehicle_connection_screen.dart`, `connection_failure_screen.dart`). Any change to network topology or subnet broke disparate parts of the app silently.
+- **Solution**:
+  - Unified all host configurations into `LuminaConstants.defaultVehicleHost` and `LuminaConstants.presetVehicleHosts` as the single source of truth.
+  - `EnvironmentConfig`, `VehicleLiveSource`, `VehicleRepositoryImpl`, and `DiagnosticsRepositoryImpl` now resolve endpoints dynamically from configuration and active connections.
+
+### 13.2 Dual-Mode Engine & Unified Companion Architecture
+- **Problem**: `VehicleSimulatorSource` possessed rich driving physics, telemetry heartbeats, temperature models, and 8-point diagnostic tests, but was severed from `main.dart`. When disconnected from the car, the app was trapped in a zombie state: joysticks did nothing, speed remained 0, and diagnostics produced hard errors.
+- **Solution**:
+  - Instantiated `VehicleSimulatorSource` in `main.dart` and provided it to both `VehicleRepositoryImpl` and `DiagnosticsRepositoryImpl`.
+  - When entering **Offline Companion Mode**, `vehicleRepo.connect('simulator')` is activated immediately:
+    - Real-time simulated telemetry flows into the app state at 5 Hz.
+    - Joystick and tactical 4-way controllers drive the vehicle, calculating throttle, steering, wheel RPM, and encoder pulses.
+    - Speedometer gauge moves, odometer accumulates distance, temperatures realistically fluctuate, and battery level discharges.
+    - Startup self-test runs all 8 subsystem checks with PASS and transitions vehicle state to READY.
+    - When connected to the physical Raspberry Pi, the system transitions smoothly to live IoT hardware (`_isLive = true`) without state corruption.
+
+### 13.3 Authentic Hazard Asset Bundling & Pothole Snapshot Visualizer
+- **Problem**: Seed pothole observations and offline runs lacked real imagery, rendering a plain dark box in `PotholeDetailScreen`.
+- **Solution**:
+  - Bundled authentic high-resolution road hazard camera frames (`sample_pothole_1.jpg`, `sample_pothole_2.jpg`, `sample_smooth_road.jpg`) into `assets/images/` and registered them in `pubspec.yaml`.
+  - Upgraded `PotholeDetailScreen._buildPotholeImage()` to support multi-tier loading:
+    1. Local asset paths (`assets/images/...`) for offline and seed observations.
+    2. Network URLs (`http://...`) for live vehicle edge server captures (`/api/v1/potholes/snapshot/<id>`).
+    3. Graceful fallback to severity-coded authentic road snapshots on network error.
+  - All snapshots feature the interactive pinch-to-zoom modal and AI segmentation reticle with confidence percentages and GPS coordinates.
+
+### 13.4 Spatial Deduplication of Road Hazards
+- **Problem**: `PotholeRepositoryImpl.deduplicateObservations()` was an empty stub (`{}`).
+- **Solution**:
+  - Implemented spatial clustering in `PotholeRepositoryImpl` using Euclidean/Haversine coordinate proximity ($\Delta\text{Lat} < 0.00005, \Delta\text{Lon} < 0.00005$, $\approx 5.5\text{ m}$).
+  - Automatically clusters raw observations into `CanonicalPothole` entities, updating status (`PROVISIONAL` $\to$ `CONFIRMED`), earliest/latest timestamps, and highest severity.
+
+### 13.5 Complete Closed-Loop Cockpit Controls
+- **Problem**: Autonomous mode lacked a START button in portrait view and had no action controls in landscape view.
+- **Solution**:
+  - `_buildAutonomousCockpitPanel` (Portrait) now toggles dynamically between `ENGAGE AUTONOMOUS CRUISE` (Green) and `STOP AUTONOMOUS DRIVE` (Red), plus an instant `TEST SNAP` button.
+  - `DriveAutonomousView` (Landscape) incorporates an integrated action bar with `ENGAGE/STOP AUTONOMOUS CRUISE` and `TEST SNAP` overlaid on the live/demo camera viewport.
+  - `CameraStreamView` automatically boots into the perspective dynamic road feed when in companion mode, accelerating and steering in sync with vehicle telemetry.
+
+### 13.6 Full Ecosystem Verification & Parity
+- **Flutter Mobile & Web**: 17/17 automated unit and integration tests passing (`companion_features_test.dart`, `dual_mode_architecture_test.dart`, `state_machine_test.dart`, `widget_test.dart`).
+- **Static Analysis**: `flutter analyze` reports 0 issues.
+- **Web Build**: `flutter build web --no-tree-shake-icons` succeeds cleanly.
+- **Python Edge Backend**: `app.py`, `motor_controller.py`, `autonomous_driver.py`, `diagnostics_engine.py`, `pothole_detector.py`, `pothole_engine.py` compile with 0 syntax errors.
+
+
 
 
 
