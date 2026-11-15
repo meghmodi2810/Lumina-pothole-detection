@@ -880,9 +880,9 @@ def post_motor_diagnostic_test():
     args_data = request.args.to_dict() or {}
     form_data = request.form.to_dict() or {}
     data = {**args_data, **form_data, **json_data}
-    channel = data.get("channel", "left").lower()
-    speed = float(data.get("speed", 100.0))
-    duration = min(4.0, max(0.5, float(data.get("duration", 1.5))))
+    channel = data.get("channel", "both").lower()
+    speed = float(data.get("speed", 85.0))
+    duration = min(4.0, max(0.4, float(data.get("duration", 1.0))))
     direction = data.get("direction", "forward").lower()
     is_fwd = direction == "forward"
 
@@ -905,7 +905,8 @@ def post_motor_diagnostic_test():
         "speed": speed,
         "durationSec": duration,
         "direction": direction,
-        "motorStatus": motor.get_status()
+        "motorStatus": motor.get_status(),
+        "message": f"Pulsed {channel} motor channels for {duration:.1f}s at {speed:.0f}% power. If wheels did not spin, ensure physical motor battery switch is ON (red L298N LED must be illuminated)."
     })
 
 def apply_model_guidance_to_manual_command(steering=0.0, throttle=0.0, action=None, speed=100.0):

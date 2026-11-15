@@ -310,6 +310,11 @@ For full documentation on the physical edge car architecture, see [AUTONOMOUS_HA
 - **Interactive Diagnostic Troubleshooting Guides**: Replaces cryptic error codes with human-readable fault summaries and numbered step-by-step physical troubleshooting instructions (wiring pins, power checks, camera ribbon orientation, and terminal test commands) for every sensor and edge subsystem.
 - **Mobile & Web Universal Parity**: The Flutter codebase compiles cleanly and identically for native Android/iOS mobile devices and Web desktop/tablet browsers with responsive layouts (28/28 automated tests passing).
 
+### 8.6 Native Swift/SwiftUI iOS Companion (`E:\lumina_ios`) & `xtool` USB-C Deployment
+- **Dedicated Native Swift/SwiftUI App**: Built specifically for iPhone and iPad in `E:\lumina_ios` with low-latency MJPEG streaming, virtual analog thumbstick, telemetry HUD, and emergency interlocks.
+- **Cross-Platform xtool Engine**: Built, codesigned, and packaged directly from Windows via `xtool` in Ubuntu WSL using the Darwin Swift SDK (`arm64-apple-ios`).
+- **1-Click Hardware USB-C Passthrough**: Uses `usbipd-win` to bridge the physical iPhone/iPad over USB-C into WSL, with automated 1-click deployment via `DEPLOY_TO_DEVICE.bat` or `deploy_ipad.ps1`.
+
 ### 8.3 Automated Verification & Soak Testing Suite
 Comprehensive automated testing is provided in `tests/`:
 - `python tests/test_physical_hardware.py`: Runs 7/7 physical sensor, bus, and GPIO diagnostics on the Pi.

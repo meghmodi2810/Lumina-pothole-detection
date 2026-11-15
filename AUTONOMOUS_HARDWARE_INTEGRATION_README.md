@@ -788,6 +788,32 @@ Following the principles of `untangle-codebase` from `caldoai/skills`, the entir
   3. Sanitized error messages in `DiagnosticsRepositoryImpl` to clearly identify networking faults (hotspot mismatches, wrong IP address, server stopped) rather than exposing raw socket error codes.
   4. Added quick-action controls (`CHANGE IP`, `RE-TEST`, `TEST LED`) and contextual failure guidance on individual checklist rows.
 
+---
+
+## 16. Native Swift/SwiftUI iOS Companion Deployment via `xtool` (`E:\lumina_ios`)
+
+### 16.1 Cross-Platform Build & Code-Signing Architecture
+- **Target Application**: `LuminaCompanion` native iOS and iPadOS app (`E:\lumina_ios`).
+- **Build Engine**: `xtool 1.24.0` hosted in Ubuntu WSL2 with the Apple Darwin Swift SDK (`arm64-apple-ios`).
+- **Provisioning & Code Signing**: Automated signing with Apple Developer Services using free Apple ID credentials.
+- **Hardware Link**: USB-C physical passthrough using `usbipd-win` connecting the iPhone directly to WSL.
+
+### 16.2 Deployment Pipeline & Execution Steps
+1. **Compilation & Packaging**:
+   ```bash
+   cd /mnt/e/lumina_ios
+   xtool dev build --sign --ipa
+   ```
+   Outputs ready-to-run `.app` and signed `.ipa` archives at `E:\lumina_ios\xtool\LuminaCompanion.ipa`.
+2. **USB Passthrough & Direct Launch**:
+   Run `DEPLOY_TO_DEVICE.bat` or in PowerShell (Administrator):
+   ```powershell
+   cd E:\lumina_ios
+   .\deploy_ipad.ps1
+   ```
+   The script automatically binds the Apple device (VID `05ac`), attaches it to WSL, and invokes `xtool dev run` to compile, install, and launch the Lumina companion directly on the iPhone over the USB-C link.
+
+
 
 
 
