@@ -17,9 +17,6 @@ import logging
 import threading
 from collections import deque
 
-from wheel_encoder import WheelEncoder
-from diagnostics_engine import glow_red_led, sound_buzzer, RED_LED_PIN, BUZZER_PIN
-
 logger = logging.getLogger("AutonomousDriver")
 
 # Hardware Pins
@@ -87,9 +84,6 @@ class AutonomousDriver:
         self.max_avoid_attempts = int(max_avoid_attempts)
         self.is_simulation = is_simulation
         self.emergency_dist_cm = float(DEFAULT_EMERGENCY_DISTANCE_CM)
-
-        # Dual Optical Wheel Encoder (FR13, Activity Diagram 6)
-        self.encoder = WheelEncoder(is_simulation=is_simulation)
 
         # State tracking
         self.state = AutonomousState.IDLE
@@ -358,14 +352,8 @@ class AutonomousDriver:
                             self.motor.set_drive_command(steer, throttle_norm)
                             time.sleep(0.06)
                         else:
-                            # Path is clear: drive straight ahead with FR13 encoder speed compensation
-                            compensated_pwm = self.encoder.compute_slope_compensation(
-                                target_speed_kmh=14.0,
-                                current_throttle_pwm=self.cruise_speed
-                            )
-                            self.motor.set_drive_command(0.0, compensated_pwm / 100.0)
-                            if self.is_simulation:
-                                self.encoder.record_simulated_ticks(speed_kmh=14.0, dt_sec=0.06)
+                            # Path is clear: drive straight ahead
+                            self.motor.set_drive_command(0.0, self.cruise_speed / 100.0)
                             time.sleep(0.06)
 
                         # Reset avoidance attempts on sustained clear path
@@ -377,14 +365,6 @@ class AutonomousDriver:
                         # ---------------------------------------------------------
                         logger.info(f"[Obstacle Detected] Clearance {current_dist:.1f} cm <= {self.stop_dist_cm:.1f} cm! Stopping.")
                         self.motor.stop()
-
-                        # Activity Diagram 4: Distance < 15 cm?
-                        # Cut Motor PWM to 0% Immediately, Turn ON Red LED & Sound Continuous Buzzer
-                        if current_dist < self.emergency_dist_cm:
-                            logger.warning(f"[Emergency Braking] Proximity {current_dist:.1f} cm < 15cm! Triggering Red LED & Buzzer.")
-                            glow_red_led(pin=RED_LED_PIN, duration_sec=1.5, blink=False)
-                            sound_buzzer(pin=BUZZER_PIN, pattern="continuous", duration_sec=1.0)
-
                         self.state = AutonomousState.OBSTACLE_STOP
                         time.sleep(0.08)
 

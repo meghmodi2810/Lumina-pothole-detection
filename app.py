@@ -168,23 +168,8 @@ latest_ai_plan = planner.plan([])
 ai_lock = threading.Lock()
 last_pothole_log_time = 0.0
 
-# FR14: Headlights & Automatic Ambient Lighting State
-headlights_active = False
-auto_headlights_enabled = True
-ambient_luminance = 120.0
-
-def set_headlights_hardware(state: bool):
-    try:
-        import RPi.GPIO as GPIO
-        GPIO.setmode(GPIO.BCM)
-        GPIO.setwarnings(False)
-        GPIO.setup(19, GPIO.OUT)
-        GPIO.output(19, GPIO.HIGH if state else GPIO.LOW)
-    except Exception:
-        pass
-
 def _ai_perception_worker():
-    global latest_ai_detections, latest_ai_plan, last_pothole_log_time, total_potholes_count, headlights_active, ambient_luminance
+    global latest_ai_detections, latest_ai_plan, last_pothole_log_time, total_potholes_count
     try:
         import torch
         torch.set_num_threads(4)
@@ -212,18 +197,6 @@ def _ai_perception_worker():
                 is_video_stream=True,
                 imgsz=320
             )
-
-            # FR14: Ambient luminance measurement for automatic headlights
-            try:
-                gray_eval = cv2.cvtColor(small_frame, cv2.COLOR_BGR2GRAY)
-                ambient_luminance = float(np.mean(gray_eval))
-                if auto_headlights_enabled:
-                    should_light = ambient_luminance < 65.0
-                    if should_light != headlights_active:
-                        headlights_active = should_light
-                        set_headlights_hardware(headlights_active)
-            except Exception:
-                pass
 
             # Scale box coordinates back to full resolution (w, h)
             scale_x = float(w) / infer_w
@@ -800,14 +773,6 @@ def get_mobile_telemetry():
     speed_est = round((m_stat["left_pwm_pct"] + m_stat["right_pwm_pct"]) / 20.0 * 2.5, 1) if m_stat["is_driving"] else 0.0
     odometer_distance_m += (speed_est / 3.6) * 0.15
 
-    # FR13 & Diagram 6: Wheel encoder feedback & pulse integration
-    enc_pulses = 0
-    if hasattr(auto_driver, "encoder"):
-        enc_pulses = auto_driver.encoder.get_total_pulses()
-        enc_dist_m = auto_driver.encoder.get_distance_meters()
-        if enc_dist_m > 0.1:
-            odometer_distance_m = enc_dist_m
-
     # FR19: Dynamic battery calculation from driving consumption
     battery_pct = max(18, 98 - int(odometer_distance_m / 25.0))
 
@@ -863,15 +828,8 @@ def get_mobile_telemetry():
         "recentPothole": latest_pot,
         "invertedDirection": motor.get_direction_inversion(),
         "gps": {"latitude": 21.1702, "longitude": 72.8311},
-        "wheelEncoderPulses": enc_pulses,
-        "headlights": headlights_active,
-        "autoLighting": auto_headlights_enabled,
-        "ambientLuminance": round(ambient_luminance, 1),
-        "lowLightDetected": ambient_luminance < 65.0,
         "obstacleDetected": auto_stat["distanceCm"] < 20.0 or is_emergency_braking,
-        "obstacleDistanceM": round(auto_stat["distanceCm"] / 100.0, 2),
-        "redLedActive": is_emergency_braking,
-        "buzzerActive": is_emergency_braking
+        "obstacleDistanceM": round(auto_stat["distanceCm"] / 100.0, 2)
     })
 
 def start_discovery_responder():
@@ -1117,25 +1075,6 @@ def override_obstacle_control():
     motor.release_emergency_stop()
     return jsonify({"success": True, "override": True, "state": "OVERRIDDEN"})
 
-@app.route("/api/v1/headlights", methods=["GET", "POST"])
-def manage_headlights():
-    """FR14: Automatic & manual headlight control (GPIO 19)."""
-    global headlights_active, auto_headlights_enabled
-    if request.method == "POST":
-        data = request.get_json(silent=True) or {}
-        if "enabled" in data:
-            headlights_active = bool(data["enabled"])
-            set_headlights_hardware(headlights_active)
-        if "autoMode" in data:
-            auto_headlights_enabled = bool(data["autoMode"])
-    return jsonify({
-        "success": True,
-        "headlights": headlights_active,
-        "autoMode": auto_headlights_enabled,
-        "ambientLuminance": round(ambient_luminance, 1),
-        "lowLightDetected": ambient_luminance < 65.0
-    })
-
 @app.route("/api/v1/vehicle/start", methods=["POST"])
 def start_vehicle():
     global is_drive_engaged
@@ -1279,22 +1218,6 @@ def test_status_led():
         "state": "PULSED",
         "message": f"Green verification LED on GPIO {pin} pulsed for {duration:.1f}s (triple chirp + steady)"
     })
-
-@app.route("/api/v1/diagnostics/red_led/test", methods=["GET", "POST"])
-def test_red_led_route():
-    """Manual hardware test for the Red Status/Error LED (GPIO 6, Activity Diagram 1 & 4)."""
-    from diagnostics_engine import glow_red_led, RED_LED_PIN
-    duration = float(request.args.get("duration", 2.5))
-    glow_red_led(pin=RED_LED_PIN, duration_sec=duration, blink=True)
-    return jsonify({"success": True, "pin": RED_LED_PIN, "state": "PULSED", "subsystem": "RED_LED"})
-
-@app.route("/api/v1/diagnostics/buzzer/test", methods=["GET", "POST"])
-def test_buzzer_route():
-    """Manual hardware test for the warning buzzer (GPIO 13, Activity Diagram 1 & 4)."""
-    from diagnostics_engine import sound_buzzer, BUZZER_PIN
-    pattern = request.args.get("pattern", "beep")
-    sound_buzzer(pin=BUZZER_PIN, pattern=pattern, duration_sec=1.2)
-    return jsonify({"success": True, "pin": BUZZER_PIN, "state": "SOUNDED", "pattern": pattern, "subsystem": "BUZZER"})
 
 @app.route("/clean_feed")
 def clean_video_feed():

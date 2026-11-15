@@ -20,13 +20,8 @@ logger = logging.getLogger("DiagnosticsEngine")
 
 # Hardware Pin Definitions (Lumina-01 Raspberry Pi 4B)
 GREEN_LED_PIN = 5          # Pin 29 (Active Status / Self-Test Pass)
-RED_LED_PIN = 6            # Pin 31 (Safety Alarm / Self-Test Fail / Obstacle Stop)
-BUZZER_PIN = 13            # Pin 33 (Active Acoustic Alarm / Obstacle Alert)
-HEADLIGHT_PIN = 19         # Pin 35 (Low-Light Forward Lighting)
 ULTRASONIC_TRIG = 16       # Pin 36 (HC-SR04 Trigger)
 ULTRASONIC_ECHO = 26       # Pin 37 (HC-SR04 Echo)
-ENCODER_LEFT_PIN = 24      # Pin 18 (Left Optical Wheel Encoder Tick)
-ENCODER_RIGHT_PIN = 25     # Pin 22 (Right Optical Wheel Encoder Tick)
 
 # Thermal Limits
 TEMP_SAFE_CEILING_C = 80.0
@@ -463,127 +458,6 @@ def glow_green_led(pin=GREEN_LED_PIN, duration_sec=3.0, pulse_pattern=True):
     return thread
 
 
-def glow_red_led(pin=RED_LED_PIN, duration_sec=2.5, blink=True):
-    """
-    Lights the vehicle's Red Status/Error LED (GPIO 6) in a background thread.
-    Triggered during self-test failure (Activity Diagram 1) and obstacle emergency stops (Activity Diagram 4).
-    """
-    def _worker():
-        try:
-            import RPi.GPIO as GPIO
-            GPIO.setmode(GPIO.BCM)
-            GPIO.setwarnings(False)
-            GPIO.setup(pin, GPIO.OUT, initial=GPIO.LOW)
-            logger.info(f"Lighting RED error LED on GPIO {pin} (duration={duration_sec}s)...")
-
-            if blink:
-                end_time = time.time() + duration_sec
-                while time.time() < end_time:
-                    GPIO.output(pin, GPIO.HIGH)
-                    time.sleep(0.12)
-                    GPIO.output(pin, GPIO.LOW)
-                    time.sleep(0.12)
-            else:
-                GPIO.output(pin, GPIO.HIGH)
-                time.sleep(duration_sec)
-
-            GPIO.output(pin, GPIO.LOW)
-            logger.info(f"Extinguished RED error LED on GPIO {pin}.")
-        except ImportError:
-            logger.info(f"[SIMULATED] Red error LED on GPIO {pin} triggered for {duration_sec}s.")
-        except Exception as e:
-            logger.warning(f"Failed to control Red LED on GPIO {pin}: {e}")
-
-    thread = threading.Thread(target=_worker, name="RedLedThread", daemon=True)
-    thread.start()
-    return thread
-
-
-def sound_buzzer(pin=BUZZER_PIN, pattern="beep", duration_sec=1.5):
-    """
-    Sounds the vehicle's acoustic warning buzzer (GPIO 13) in a background thread.
-    - 'beep': 2 distinct alert chirps (self-test failure, Activity Diagram 1).
-    - 'continuous': solid acoustic tone for emergency obstacle braking (Activity Diagram 4).
-    """
-    def _worker():
-        try:
-            import RPi.GPIO as GPIO
-            GPIO.setmode(GPIO.BCM)
-            GPIO.setwarnings(False)
-            GPIO.setup(pin, GPIO.OUT, initial=GPIO.LOW)
-            logger.info(f"Sounding buzzer on GPIO {pin} (pattern={pattern}, duration={duration_sec}s)...")
-
-            if pattern == "beep":
-                for _ in range(2):
-                    GPIO.output(pin, GPIO.HIGH)
-                    time.sleep(0.15)
-                    GPIO.output(pin, GPIO.LOW)
-                    time.sleep(0.12)
-            else:
-                # Continuous alarm tone for emergency stop
-                GPIO.output(pin, GPIO.HIGH)
-                time.sleep(duration_sec)
-                GPIO.output(pin, GPIO.LOW)
-
-            logger.info(f"Silenced buzzer on GPIO {pin}.")
-        except ImportError:
-            logger.info(f"[SIMULATED] Buzzer on GPIO {pin} sounded ({pattern} for {duration_sec}s).")
-        except Exception as e:
-            logger.warning(f"Failed to control Buzzer on GPIO {pin}: {e}")
-
-    thread = threading.Thread(target=_worker, name="BuzzerThread", daemon=True)
-    thread.start()
-    return thread
-
-
-def trigger_failure_alarm():
-    """
-    Activity Diagram 1: Turn ON Red LED & Beep Buzzer when hardware self-test fails.
-    """
-    glow_red_led(pin=RED_LED_PIN, duration_sec=2.5, blink=True)
-    sound_buzzer(pin=BUZZER_PIN, pattern="beep", duration_sec=1.2)
-
-
-def check_wheel_encoders(encoder=None):
-    """
-    FR13: Validates optical wheel encoder sensor subsystem on GPIO 24 and 25.
-    """
-    try:
-        if encoder is not None:
-            total_pulses = encoder.get_total_pulses()
-            is_hw = getattr(encoder, "is_hardware", False)
-            return {
-                "subsystem": "WHEEL_ENCODER",
-                "status": "PASS",
-                "details": f"Dual Optical Encoders active on GPIO {ENCODER_LEFT_PIN}/{ENCODER_RIGHT_PIN}: {total_pulses} pulses recorded ({'Hardware' if is_hw else 'Simulated'})"
-            }
-
-        import RPi.GPIO as GPIO
-        GPIO.setmode(GPIO.BCM)
-        GPIO.setwarnings(False)
-        GPIO.setup(ENCODER_LEFT_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-        GPIO.setup(ENCODER_RIGHT_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-        l_val = GPIO.input(ENCODER_LEFT_PIN)
-        r_val = GPIO.input(ENCODER_RIGHT_PIN)
-        return {
-            "subsystem": "WHEEL_ENCODER",
-            "status": "PASS",
-            "details": f"Dual Optical Wheel Encoders verified on GPIO {ENCODER_LEFT_PIN}/{ENCODER_RIGHT_PIN} (States: L={l_val}, R={r_val})"
-        }
-    except ImportError:
-        return {
-            "subsystem": "WHEEL_ENCODER",
-            "status": "PASS",
-            "details": f"Dual Optical Encoders simulated on GPIO {ENCODER_LEFT_PIN}/{ENCODER_RIGHT_PIN} (Host dev mode)"
-        }
-    except Exception as e:
-        return {
-            "subsystem": "WHEEL_ENCODER",
-            "status": "FAIL",
-            "details": f"Optical wheel encoder hardware error: {str(e)}"
-        }
-
-
 def run_full_hardware_diagnostics(camera=None, engine=None, motor=None, auto_driver=None):
     """
     Executes the 5 required hardware startup checks:
@@ -634,37 +508,20 @@ def run_full_hardware_diagnostics(camera=None, engine=None, motor=None, auto_dri
         "details": "Local Wi-Fi Telemetry Link: OK"
     })
 
-    # 8. Dual Optical Wheel Encoders (FR13, Activity Diagram 6)
-    encoder_inst = getattr(auto_driver, "encoder", None)
-    results.append(check_wheel_encoders(encoder=encoder_inst))
-
     # Determine overall pass/fail based on the 5 essential checks
     essential_subsystems = {"STORAGE", "ULTRASONIC", "CAMERA", "INFERENCE_CORE", "TEMPERATURE"}
     failed_checks = [c for c in results if c["subsystem"] in essential_subsystems and c["status"] == "FAIL"]
     is_successful = (len(failed_checks) == 0)
 
-    # Activity Diagram 1:
-    # All Hardware OK?
-    #   YES -> Turn ON Green LED (GPIO 5) & Send 'System Ready'
-    #   NO  -> Turn ON Red LED (GPIO 6) & Beep Buzzer (GPIO 13)
     led_triggered = False
-    red_led_triggered = False
-    buzzer_triggered = False
-
     if is_successful:
         glow_green_led(pin=GREEN_LED_PIN, duration_sec=3.0)
         led_triggered = True
-    else:
-        trigger_failure_alarm()
-        red_led_triggered = True
-        buzzer_triggered = True
 
     return {
         "isSuccessful": is_successful,
         "timestamp": int(time.time() * 1000),
         "ledGlowTriggered": led_triggered,
-        "redLedTriggered": red_led_triggered,
-        "buzzerTriggered": buzzer_triggered,
         "results": results
     }
 

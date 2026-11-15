@@ -30,11 +30,6 @@ This subsystem elevates the LUMINA robotic vehicle from a teleoperated IoT vehic
 | **HC-SR04 Trigger** | Output | **GPIO 16** | Pin 36 | 15 µs high pulse |
 | **HC-SR04 Echo** | Input | **GPIO 26** | Pin 37 | Pulse duration $\propto$ distance (via voltage divider) |
 | **Status Green LED** | Output | **GPIO 5** | Pin 29 | 3.3V active HIGH, current-limited via 330Ω (Pass Indicator) |
-| **Status Red LED** | Output | **GPIO 6** | Pin 31 | 3.3V active HIGH (Failure & Obstacle Emergency Alarm) |
-| **Acoustic Buzzer** | Output | **GPIO 13** | Pin 33 | 3.3V active HIGH (2 beeps on fault, continuous on brake) |
-| **Illumination Headlights** | Output | **GPIO 19** | Pin 35 | 3.3V active HIGH (Auto low-light < 65 lum & manual) |
-| **Left Optical Encoder** | Input (Pull-up) | **GPIO 24** | Pin 18 | 20 slots/rev optical interrupt sensor |
-| **Right Optical Encoder** | Input (Pull-up) | **GPIO 25** | Pin 22 | 20 slots/rev optical interrupt sensor |
 | **Left Motors (IN1)** | Output | **GPIO 17** | Pin 11 | L298N Channel A Direction Forward |
 | **Left Motors (IN2)** | Output | **GPIO 27** | Pin 13 | L298N Channel A Direction Reverse |
 | **Left Speed (ENA)** | Hardware PWM | **GPIO 18** | Pin 12 | PWM Channel 0, 100 Hz duty cycle (0–100%) |
@@ -65,18 +60,14 @@ When the startup self-test is invoked via `/api/v1/diagnostics/run`, `diagnostic
         ├── 4. AI Perception Model Residency (YOLOv8 Segmentation)
         │      └── Verified: road_damage_seg_best.pt resident in GPU/RAM
         │
-        ├── 5. SoC Thermal Sensor (/sys/class/thermal/thermal_zone0/temp)
-        │      └── Verified: Core temp < 80.0°C (Actual: 45–47°C nominal)
-        │
-        └── 6. Dual Optical Wheel Encoders (GPIO 24 / 25)
-               └── Verified: Optical pulse channels initialized, GPIO lines pull-up confirmed
+        └── 5. SoC Thermal Sensor (/sys/class/thermal/thermal_zone0/temp)
+               └── Verified: Core temp < 80.0°C (Actual: 45–47°C nominal)
         │
         ├── ALL PASS?
         │      ├── YES ──> Glow Green LED on GPIO 5 for 3.0s (Background Thread)
         │      │           Return JSON { "isSuccessful": true, "ledGlowTriggered": true, "results": [...] }
         │      │
-        │      └── NO  ──> Turn ON Red LED on GPIO 6 & Sound 2 Acoustic Warning Chirps on Buzzer GPIO 13.
-        │                  Return JSON { "isSuccessful": false, "ledGlowTriggered": false, "results": [...] }
+        │      └── NO  ──> Keep LED OFF. Return JSON with exact failing component & error string
 ```
 
 ### 3.2 Granular Failure Diagnostic Messages
