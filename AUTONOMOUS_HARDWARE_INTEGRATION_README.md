@@ -885,6 +885,24 @@ Following the principles of `untangle-codebase` from `caldoai/skills`, the entir
 - Vehicle IP verified active at `http://10.78.252.31:5000`.
 - Real hardware diagnostics return **7/7 physical checks passing** (Storage, HC-SR04 sonar at 65.0 cm, CSI camera, YOLOv8 model, CPU thermal, L298N motors, and Wi-Fi link) with physical 3-second green LED pulse on GPIO 5.
 
+### 17.4 Interactive Vehicle Reconnect Feedback & Diagnostic Modal
+1. **Interactive Tap Feedback**:
+   - Tapping the `RECONNECT` button in `CockpitScaffold` or `OfflineStateScreen` immediately transitions the button to an active loading state (`CircularProgressIndicator` + `CONNECTING...`), preventing accidental multi-taps.
+   - Triggers an instant informative SnackBar: `"Attempting to reconnect to LUMINA vehicle..."`.
+2. **Reconnection Diagnostic Modal Dialog (`showReconnectFailedDialog`)**:
+   - If reconnection fails (vehicle powered off, IP reassigned by hotspot, or out of range), the app presents an informative modal dialog:
+     - **Header**: Critical warning badge (`wifi_off_rounded` in warm coral).
+     - **Diagnostics Card**: Shows target carrier IP and exact failure reason (`connectionError`).
+     - **Troubleshooting Checklist**:
+       1. *Vehicle Power*: Verify Raspberry Pi battery connection and solid red power LED.
+       2. *Hotspot Network*: Verify iPad/phone is connected to the exact same Wi-Fi SSID / hotspot.
+       3. *Carrier IP*: Hotspot reassignment guidance.
+     - **Actionable Controls**:
+       - `[TRY AGAIN]`: Retries the connection loop directly within the modal with inline spinner feedback.
+       - `[CHANGE IP / SCAN]`: Steps cleanly back to `VehicleConnectionScreen` to re-scan for the car without having to force-close the app.
+       - `[DISMISS]`: Closes the modal for offline review.
+
+
 
 
 

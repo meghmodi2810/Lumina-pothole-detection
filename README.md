@@ -322,6 +322,10 @@ For full documentation on the physical edge car architecture, see [AUTONOMOUS_HA
 - **Autonomous Cruise Synchronization**: Selecting autonomous mode instantly updates the application state (`isDriving = true`), dynamically toggling between `STOP AUTONOMOUS CRUISE` (warm coral) when driving and `RESUME AUTONOMOUS CRUISE` (solar lime) when halted.
 - **Edge-to-Edge Gaming Fullscreen Mode**: 1-tap fullscreen button locks to strict landscape (`SystemUiMode.immersiveSticky`) with 100% viewport camera feed, translucent gaming telemetry HUD (Speed, Distance, Radar, CPU Temp, FPS, Ping, Battery), dedicated Stop / E-Stop buttons in Autonomous mode, and a thumb-friendly virtual 4-way D-Pad in Manual mode.
 
+### 8.8 Interactive Reconnect Feedback & Diagnostic Modal
+- **Active Click Feedback**: When tapping `RECONNECT` in the top lost-connection banner or `OfflineStateScreen`, the button immediately changes to a loading state (`CircularProgressIndicator` + `CONNECTING...`), disabling repeated clicks, and emits an informative SnackBar.
+- **Diagnostic Troubleshooting Modal (`showReconnectFailedDialog`)**: If the car is still offline (powered off, wrong IP, or Wi-Fi dropped), an alert modal displays the target IP, connection error details, a 3-point troubleshooting checklist (power, Wi-Fi network match, and IP reassignment), and direct `[TRY AGAIN]` / `[CHANGE IP / SCAN]` / `[DISMISS]` buttons.
+
 ### 8.3 Automated Verification & Soak Testing Suite
 Comprehensive automated testing is provided in `tests/`:
 - `python tests/test_physical_hardware.py`: Runs 7/7 physical sensor, bus, and GPIO diagnostics on the Pi.
