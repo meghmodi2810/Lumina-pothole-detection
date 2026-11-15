@@ -889,6 +889,7 @@ Following the principles of `untangle-codebase` from `caldoai/skills`, the entir
 - Vehicle IP verified active at `http://10.78.252.31:5000`.
 - Real hardware diagnostics return **7/7 physical checks passing** (Storage, HC-SR04 sonar at 65.0 cm, CSI camera, YOLOv8 model, CPU thermal, L298N motors, and Wi-Fi link) with physical 3-second green LED pulse on GPIO 5.
 
+
 ### 17.4 Interactive Vehicle Reconnect Feedback & Diagnostic Modal
 1. **Interactive Tap Feedback**:
    - Tapping the `RECONNECT` button in `CockpitScaffold` or `OfflineStateScreen` immediately transitions the button to an active loading state (`CircularProgressIndicator` + `CONNECTING...`), preventing accidental multi-taps.
@@ -905,6 +906,61 @@ Following the principles of `untangle-codebase` from `caldoai/skills`, the entir
        - `[TRY AGAIN]`: Retries the connection loop directly within the modal with inline spinner feedback.
        - `[CHANGE IP / SCAN]`: Steps cleanly back to `VehicleConnectionScreen` to re-scan for the car without having to force-close the app.
        - `[DISMISS]`: Closes the modal for offline review.
+
+---
+
+## 19. Motor Power Balance & Vision Perception Worker Resilience
+
+### 19.1 Root Cause Analysis: The "Permanent Red Pothole Square" & Steering Skew
+
+1. **Perception Thread Crash**:
+   - In `app.py`, the background thread `_ai_perception_worker` encountered two unhandled runtime exceptions upon detecting its first hazard:
+     - `NameError: name 'ann_frame' is not defined` (the annotated snapshot image was referenced before assignment).
+     - `NameError: name 'logger' is not defined` (the module logger was not initialized at global scope).
+   - Because of these unhandled errors, `_ai_perception_worker` terminated immediately and permanently.
+   - The thread death left global memory structures `latest_ai_detections` and `latest_ai_plan` frozen with `evasion_mode: EVADE_RIGHT` and persistent bounding box coordinates `[y1, x1, y2, x2]`.
+
+2. **Perception-to-Feed Blitting Loop**:
+   - The `/video_feed` MJPEG generator loop remained running at 30 FPS. On every tick, it checked `latest_ai_detections`. Because the list was never cleared by the dead worker, it continuously rendered the red cyberpunk obstacle bounding box onto every live camera frame forever.
+
+3. **Unequal Motor Power Root Cause**:
+   - **Phantom Hazard Avoidance Skew**: Whenever the operator gave a manual driving command (e.g. `FORWARD`), `apply_model_guidance_to_manual_command` evaluated the frozen `latest_ai_detections`. It assumed an active road crater was directly in the center path, applying a dynamic `+0.35` steering offset and automatically throttling down the right motor channel by 14% to 35% while commanding the left motor at full speed.
+   - **Asymmetric Inrush Stagger**: An artificial 50ms startup delay had been added between left and right channels (`pwm_left = 100%, pwm_right = 0%`), starving the right wheel pair on every command initialization.
+   - **Voltage Drop & Speed Reduction**: Reducing `default_speed_pct` to 80% starved the L298N dual H-bridge (which suffers an internal Darlington transistor $V_{CE(sat)}$ voltage drop of ~1.8V to 2.2V). At 80% duty cycle on a nominal 7.4V battery pack, motors received under 4.3V, causing motors with slightly higher gearbox friction to turn much slower or stall completely compared to free-spinning wheels.
+
+### 19.2 Motor Driver Hardening (`motor_controller.py`)
+
+1. **Restored 100% Full Manual Throttle**:
+   - Manual driving commands now default to 100% duty cycle (`default_speed_pct = 100.0`), delivering maximum available rail voltage to all 4 wheels.
+   - Autonomous cruising retains its calibrated 80% limit (`DEFAULT_CRUISE_SPEED = 80.0` in `autonomous_driver.py`).
+
+2. **Direct Digital Gating Bypass ($\ge 99\%$)**:
+   - When commanded speed is $\ge 99.0\%$, the software PWM channel on `ENA` (GPIO 12) and `ENB` (GPIO 18) is bypassed and driven with a continuous `GPIO.output(pin, GPIO.HIGH)`. This eliminates software PWM timer switching resistance, jitter, and waveform collapse.
+
+3. **Symmetrical Dual-Channel Breakaway Pulse**:
+   - Removed asymmetric staggered inrush delays. Both left and right channels engage simultaneously, preventing direction skew or torque starvation on startup.
+
+4. **Software Trim Balance Calibration**:
+   - Added software motor trim parameters (`trim_left`, `trim_right`) bounded in $[0.50, 1.00]$:
+     $$\text{pwm\_left\_final} = \text{speed} \times \text{trim\_left}$$
+     $$\text{pwm\_right\_final} = \text{speed} \times \text{trim\_right}$$
+   - Exposed runtime trim calibration via REST API:
+     - `GET /api/v1/vehicle/trim` / `POST /api/v1/vehicle/trim`
+     - `GET /api/v1/motor/trim` / `POST /api/v1/motor/trim`
+
+### 19.3 Perception Worker Resilience & Auto-Decay (`app.py`)
+
+1. **Worker Exception Containment**:
+   - Initialized module logger `logger = logging.getLogger("LuminaApp")`.
+   - Wrapped snapshot creation and contour rendering in isolated `try...except` blocks so an individual frame anomaly cannot crash the background perception thread.
+
+2. **Temporal Staleness Auto-Decay (0.8s TTL)**:
+   - Added `last_ai_update_time` tracking. If the perception worker fails to update within 800 milliseconds:
+     - `latest_ai_detections` is automatically cleared.
+     - `latest_ai_plan` decays to default neutral tracking (`CENTER_TRACKING`, warning `GREEN`).
+     - Live video feed ceases rendering bounding boxes when no active hazards exist.
+     - Steering arbitrator applies zero steering bias (`steer_offset = 0.0`), guaranteeing perfectly balanced motor outputs during manual driving.
+
 
 
 

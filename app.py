@@ -25,6 +25,7 @@ class PollingLogFilter(logging.Filter):
         return "/api/v1/telemetry" not in msg and "/clean_feed" not in msg and "/video_feed" not in msg
 
 logging.getLogger('werkzeug').addFilter(PollingLogFilter())
+logger = logging.getLogger("LuminaApp")
 
 # ASGI wrapper so the app can be run with both 'python app.py' (Flask) and 'uvicorn app:asgi_app' (ASGI)
 try:
@@ -165,11 +166,12 @@ camera.start(mode="webcam")
 
 latest_ai_detections = []
 latest_ai_plan = planner.plan([])
+last_ai_update_time = time.time()
 ai_lock = threading.Lock()
 last_pothole_log_time = 0.0
 
 def _ai_perception_worker():
-    global latest_ai_detections, latest_ai_plan, last_pothole_log_time, total_potholes_count
+    global latest_ai_detections, latest_ai_plan, last_pothole_log_time, total_potholes_count, last_ai_update_time
     try:
         import torch
         torch.set_num_threads(4)
@@ -177,14 +179,15 @@ def _ai_perception_worker():
         pass
 
     while True:
-        if not camera.is_running:
-            time.sleep(0.15)
-            continue
-        raw_frame, _ = camera.get_frame()
-        if raw_frame is None:
-            time.sleep(0.04)
-            continue
         try:
+            if not camera.is_running:
+                time.sleep(0.15)
+                continue
+            raw_frame, _ = camera.get_frame()
+            if raw_frame is None:
+                time.sleep(0.04)
+                continue
+
             h, w = raw_frame.shape[:2]
             infer_w = 320
             infer_h = max(32, int(h * (infer_w / float(w))))
@@ -192,7 +195,7 @@ def _ai_perception_worker():
             
             _, detections, _ = engine.detect_and_analyze(
                 small_frame,
-                conf_threshold=0.25,
+                conf_threshold=0.35,
                 enable_box_fusion=True,
                 is_video_stream=True,
                 imgsz=320
@@ -215,10 +218,13 @@ def _ai_perception_worker():
                 scaled_detections.append(d)
 
             plan = planner.plan(scaled_detections)
+            now = time.time()
+
             with ai_lock:
                 latest_ai_detections = scaled_detections
                 latest_ai_plan = plan
-                now = time.time()
+                last_ai_update_time = now
+
                 # Debounced pothole recording: log at most once per 2 seconds to eliminate duplicate spam
                 if scaled_detections and (now - last_pothole_log_time >= 2.0):
                     last_pothole_log_time = now
@@ -226,13 +232,18 @@ def _ai_perception_worker():
                     snapshot_filename = f"{pothole_id}.jpg"
                     snapshot_path = os.path.join(SNAPSHOTS_FOLDER, snapshot_filename)
                     try:
-                        cv2.imwrite(snapshot_path, ann_frame)
+                        snap_img = raw_frame.copy()
+                        for s_det in scaled_detections:
+                            s_box = s_det.get("bbox")
+                            if s_box:
+                                engine._draw_cyber_box(snap_img, s_box, (0, 0, 240), f"Pothole {pothole_id}")
+                        cv2.imwrite(snapshot_path, snap_img)
                     except Exception as snap_err:
                         logger.warning(f"Could not write pothole snapshot image: {snap_err}")
 
                     for det in scaled_detections:
                         conf = float(det.get("confidence", 0.8))
-                        if conf >= 0.25:
+                        if conf >= 0.35:
                             dist_est = float(det.get("distance_m", 0.8))
                             sev = det.get("severity", "MODERATE").upper()
                             recent_detected_potholes.insert(0, {
@@ -258,9 +269,9 @@ def _ai_perception_worker():
                             })
                     if len(recent_detected_potholes) > 20:
                         del recent_detected_potholes[20:]
-                    total_potholes_count += len([d for d in scaled_detections if float(d.get("confidence", 0.8)) >= 0.25])
+                    total_potholes_count += len([d for d in scaled_detections if float(d.get("confidence", 0.8)) >= 0.35])
         except Exception as e:
-            logger.error(f"[AI Perception] Worker exception: {e}", exc_info=True)
+            logger.error(f"[AI Perception] Worker exception: {e}")
         time.sleep(0.08)
 
 threading.Thread(target=_ai_perception_worker, daemon=True).start()
@@ -403,6 +414,10 @@ def generate_video_stream():
             continue
 
         with ai_lock:
+            # Staleness guard: if perception hasn't refreshed in > 0.8s, decay stale detections
+            if time.time() - last_ai_update_time > 0.8:
+                latest_ai_detections = []
+                latest_ai_plan = planner.plan([])
             cur_plan = dict(latest_ai_plan)
             cur_dets = list(latest_ai_detections)
 
@@ -685,9 +700,11 @@ motor = MotorController(
     in1=23, in2=22, ena=12,
     in3=27, in4=17, enb=18,
     pwm_frequency=100,
-    default_speed_pct=80.0,
+    default_speed_pct=100.0,
     max_speed_ceiling=1.0,
-    watchdog_timeout_sec=0.6
+    watchdog_timeout_sec=0.6,
+    trim_left=1.0,
+    trim_right=1.0
 )
 
 def get_current_ai_plan():
@@ -775,6 +792,22 @@ def vehicle_inversion():
             "message": f"Chassis orientation set to {'INVERTED (REAR FORWARD)' if inv else 'NORMAL (FRONT FORWARD)'}"
         })
     return jsonify({"inverted": motor.get_direction_inversion()})
+
+@app.route("/api/v1/vehicle/trim", methods=["GET", "POST"])
+@app.route("/api/v1/motor/trim", methods=["GET", "POST"])
+def vehicle_trim():
+    """Gets or sets Left/Right motor power trim calibration to eliminate physical motor imbalance."""
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        tl = float(data.get("trim_left", data.get("left", 1.0)))
+        tr = float(data.get("trim_right", data.get("right", 1.0)))
+        motor.set_motor_trim(trim_left=tl, trim_right=tr)
+        return jsonify({
+            "success": True,
+            "trim": motor.get_motor_trim(),
+            "message": f"Motor balance trim set: Left={motor.trim_left:.2f}, Right={motor.trim_right:.2f}"
+        })
+    return jsonify({"success": True, "trim": motor.get_motor_trim()})
 
 @app.route("/api/v1/telemetry", methods=["GET"])
 def get_mobile_telemetry():
@@ -924,6 +957,9 @@ def apply_model_guidance_to_manual_command(steering=0.0, throttle=0.0, action=No
     - If user steers/turns: blends avoidance offset to steer clear of hazard rims.
     """
     with ai_lock:
+        if time.time() - last_ai_update_time > 0.8:
+            latest_ai_detections = []
+            latest_ai_plan = planner.plan([])
         dets = list(latest_ai_detections)
 
     # 1. Handle discrete action mapping

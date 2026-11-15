@@ -327,6 +327,11 @@ For full documentation on the physical edge car architecture, see [AUTONOMOUS_HA
 - **Active Click Feedback**: When tapping `RECONNECT` in the top lost-connection banner or `OfflineStateScreen`, the button immediately changes to a loading state (`CircularProgressIndicator` + `CONNECTING...`), disabling repeated clicks, and emits an informative SnackBar.
 - **Diagnostic Troubleshooting Modal (`showReconnectFailedDialog`)**: If the car is still offline (powered off, wrong IP, or Wi-Fi dropped), an alert modal displays the target IP, connection error details, a 3-point troubleshooting checklist (power, Wi-Fi network match, and IP reassignment), and direct `[TRY AGAIN]` / `[CHANGE IP / SCAN]` / `[DISMISS]` buttons.
 
+### 8.9 Motor Power Balancing, Digital 100% Gating & Perception Resilience
+- **Equal Motor Power & Breakaway Kickstart**: Replaced asymmetric channel delays with simultaneous dual-channel kickstart pulses. Commands at 100% speed bypass software PWM timers via direct digital `GPIO.HIGH` outputs, eliminating transistor switching resistance and delivering maximum battery voltage to the L298N H-bridge. Manual drive defaults to 100% full power while autonomous cruising maintains calibrated 80% cruise speed.
+- **Software Motor Trim API (`/api/v1/vehicle/trim` & `/api/v1/motor/trim`)**: Allows fine-tuning left/right motor channel balance (`trim_left`, `trim_right` from 0.50 to 1.00) to compensate for real-world mechanical gearbox friction variations.
+- **Perception Crash Containment & Staleness Auto-Decay**: Isolated frame annotation exceptions inside `_ai_perception_worker` to prevent thread crashes. Implemented a 0.8-second staleness auto-decay that automatically clears bounding boxes and neutralizes steering guidance if inference stalls, preventing stuck detection overlays or ghost obstacle steering bias.
+
 ### 8.3 Automated Verification & Soak Testing Suite
 Comprehensive automated testing is provided in `tests/`:
 - `python tests/test_physical_hardware.py`: Runs 7/7 physical sensor, bus, and GPIO diagnostics on the Pi.

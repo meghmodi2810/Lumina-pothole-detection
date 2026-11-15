@@ -41,10 +41,12 @@ class MotorController:
         in1=23, in2=22, ena=12,
         in3=27, in4=17, enb=18,
         pwm_frequency=100,
-        default_speed_pct=80.0,
+        default_speed_pct=100.0,
         min_start_pwm=50,
         max_speed_ceiling=1.0,
         watchdog_timeout_sec=1.5,
+        trim_left=1.0,
+        trim_right=1.0,
         **kwargs
     ):
         self.in1 = in1
@@ -58,6 +60,8 @@ class MotorController:
         self.min_start_pwm = 60
         self.max_speed_ceiling = 1.0
         self.watchdog_timeout_sec = watchdog_timeout_sec
+        self.trim_left = max(0.5, min(1.5, float(trim_left)))
+        self.trim_right = max(0.5, min(1.5, float(trim_right)))
 
         self.is_hardware = GPIO_AVAILABLE
         self.pwm_left = None
@@ -78,6 +82,18 @@ class MotorController:
 
         self._init_gpio()
         self._start_watchdog()
+
+    def set_motor_trim(self, trim_left=1.0, trim_right=1.0):
+        """Calibrates motor balance to eliminate left/right mechanical power differences."""
+        with self._lock:
+            self.trim_left = max(0.5, min(1.5, float(trim_left)))
+            self.trim_right = max(0.5, min(1.5, float(trim_right)))
+            logger.info(f"[Trim] Motor balance calibrated: Left={self.trim_left:.2f}, Right={self.trim_right:.2f}")
+
+    def get_motor_trim(self) -> dict:
+        """Returns current trim multipliers."""
+        with self._lock:
+            return {"trim_left": self.trim_left, "trim_right": self.trim_right}
 
     def set_direction_inversion(self, inverted: bool):
         """Inverts front and rear chassis direction (180 degree flip)."""
@@ -323,8 +339,12 @@ class MotorController:
                 self._apply_raw_outputs(0, 1, 0, 1, left_speed, right_speed, was_stopped=was_stopped)
 
     def _apply_raw_outputs(self, in1_val, in2_val, in3_val, in4_val, left_speed, right_speed, was_stopped=False):
-        self.left_pwm_pct = round(left_speed, 1)
-        self.right_pwm_pct = round(right_speed, 1)
+        # Apply motor trim multipliers to calibrate Left/Right motor power differences
+        actual_left = max(0.0, min(100.0, float(left_speed) * self.trim_left))
+        actual_right = max(0.0, min(100.0, float(right_speed) * self.trim_right))
+
+        self.left_pwm_pct = round(actual_left, 1)
+        self.right_pwm_pct = round(actual_right, 1)
 
         if self.is_hardware:
             try:
@@ -341,37 +361,42 @@ class MotorController:
                 is_right_active = bool(in3_val or in4_val)
 
                 if getattr(self, '_has_hardware_pwm', False) and self.pwm_left is not None and self.pwm_right is not None:
-                    # Dynamic Launch Kickstart with Inrush Soft-Stagger:
-                    # Staggers left and right start by 50ms to halve the instantaneous battery surge current (prevents voltage collapse),
-                    # then holds 100% PWM for 250ms to overcome static friction before smooth decay.
-                    if was_stopped and (is_left_active or is_right_active) and (left_speed > 15.0 or right_speed > 15.0):
-                        if is_left_active and is_right_active:
-                            self.pwm_left.ChangeDutyCycle(100.0)
-                            self.pwm_right.ChangeDutyCycle(0.0)
-                            time.sleep(0.05)
+                    # Symmetrical Launch Kickstart: Apply pulse simultaneously to BOTH channels (NO left/right stagger)
+                    if was_stopped and (is_left_active or is_right_active) and (actual_left > 15.0 or actual_right > 15.0):
                         burst_l = 100.0 if is_left_active else 0.0
                         burst_r = 100.0 if is_right_active else 0.0
                         self.pwm_left.ChangeDutyCycle(burst_l)
                         self.pwm_right.ChangeDutyCycle(burst_r)
-                        time.sleep(0.25)
-                        # Smooth decay step before setting continuous target
-                        mid_l = max(left_speed, (100.0 + left_speed) / 2.0) if is_left_active else 0.0
-                        mid_r = max(right_speed, (100.0 + right_speed) / 2.0) if is_right_active else 0.0
-                        self.pwm_left.ChangeDutyCycle(mid_l)
-                        self.pwm_right.ChangeDutyCycle(mid_r)
-                        time.sleep(0.08)
+                        time.sleep(0.12)  # Fast 120ms burst to break stiction without lag
 
-                    target_l = max(0.0, min(100.0, float(left_speed))) if is_left_active else 0.0
-                    target_r = max(0.0, min(100.0, float(right_speed))) if is_right_active else 0.0
-                    self.pwm_left.ChangeDutyCycle(target_l)
-                    self.pwm_right.ChangeDutyCycle(target_r)
+                    target_l = actual_left if is_left_active else 0.0
+                    target_r = actual_right if is_right_active else 0.0
+
+                    # Pure digital HIGH for 100% full power (eliminates software PWM timer jitter & switching losses)
+                    if target_l >= 99.0:
+                        self.pwm_left.ChangeDutyCycle(100.0)
+                        GPIO.output(self.ena, GPIO.HIGH)
+                    elif is_left_active:
+                        self.pwm_left.ChangeDutyCycle(target_l)
+                    else:
+                        self.pwm_left.ChangeDutyCycle(0.0)
+                        GPIO.output(self.ena, GPIO.LOW)
+
+                    if target_r >= 99.0:
+                        self.pwm_right.ChangeDutyCycle(100.0)
+                        GPIO.output(self.enb, GPIO.HIGH)
+                    elif is_right_active:
+                        self.pwm_right.ChangeDutyCycle(target_r)
+                    else:
+                        self.pwm_right.ChangeDutyCycle(0.0)
+                        GPIO.output(self.enb, GPIO.LOW)
                 else:
                     GPIO.output(self.ena, GPIO.HIGH if is_left_active else GPIO.LOW)
                     GPIO.output(self.enb, GPIO.HIGH if is_right_active else GPIO.LOW)
             except Exception as e:
                 logger.error(f"Error applying hardware motor outputs: {e}")
         else:
-            logger.debug(f"[SIM] IN=({in1_val},{in2_val},{in3_val},{in4_val}) PWM=({left_speed:.0f}%, {right_speed:.0f}%) Kickstart={was_stopped}")
+            logger.debug(f"[SIM] IN=({in1_val},{in2_val},{in3_val},{in4_val}) PWM=({self.left_pwm_pct:.0f}%, {self.right_pwm_pct:.0f}%) Kickstart={was_stopped}")
 
     def emergency_stop(self):
         with self._lock:
@@ -400,6 +425,8 @@ class MotorController:
                 "current_throttle": self.current_throttle,
                 "left_pwm_pct": self.left_pwm_pct,
                 "right_pwm_pct": self.right_pwm_pct,
+                "trim_left": self.trim_left,
+                "trim_right": self.trim_right,
             }
 
     def cleanup(self):
