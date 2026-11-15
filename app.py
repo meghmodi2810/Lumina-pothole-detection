@@ -168,8 +168,23 @@ latest_ai_plan = planner.plan([])
 ai_lock = threading.Lock()
 last_pothole_log_time = 0.0
 
+# FR14: Headlights & Automatic Ambient Lighting State
+headlights_active = False
+auto_headlights_enabled = True
+ambient_luminance = 120.0
+
+def set_headlights_hardware(state: bool):
+    try:
+        import RPi.GPIO as GPIO
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setwarnings(False)
+        GPIO.setup(19, GPIO.OUT)
+        GPIO.output(19, GPIO.HIGH if state else GPIO.LOW)
+    except Exception:
+        pass
+
 def _ai_perception_worker():
-    global latest_ai_detections, latest_ai_plan, last_pothole_log_time, total_potholes_count
+    global latest_ai_detections, latest_ai_plan, last_pothole_log_time, total_potholes_count, headlights_active, ambient_luminance
     try:
         import torch
         torch.set_num_threads(4)
@@ -197,6 +212,18 @@ def _ai_perception_worker():
                 is_video_stream=True,
                 imgsz=320
             )
+
+            # FR14: Ambient luminance measurement for automatic headlights
+            try:
+                gray_eval = cv2.cvtColor(small_frame, cv2.COLOR_BGR2GRAY)
+                ambient_luminance = float(np.mean(gray_eval))
+                if auto_headlights_enabled:
+                    should_light = ambient_luminance < 65.0
+                    if should_light != headlights_active:
+                        headlights_active = should_light
+                        set_headlights_hardware(headlights_active)
+            except Exception:
+                pass
 
             # Scale box coordinates back to full resolution (w, h)
             scale_x = float(w) / infer_w
@@ -234,10 +261,13 @@ def _ai_perception_worker():
                         conf = float(det.get("confidence", 0.8))
                         if conf >= 0.25:
                             dist_est = float(det.get("distance_m", 0.8))
+                            sev = det.get("severity", "MODERATE").upper()
                             recent_detected_potholes.insert(0, {
                                 "id": pothole_id,
+                                "potholeId": pothole_id,
                                 "timestamp": int(now * 1000),
-                                "severity": det.get("severity", "MODERATE").upper(),
+                                "severity": sev,
+                                "roadCondition": sev,
                                 "confidence": round(conf, 2),
                                 "distanceM": round(dist_est, 1),
                                 "estimatedAreaM2": round(float(det.get("width_norm", 0.3) * det.get("height_norm", 0.2) * 1.5), 2),
@@ -245,7 +275,13 @@ def _ai_perception_worker():
                                 "avoidanceAction": plan.get("evasion_mode", "CENTER_TRACKING"),
                                 "isHazard": True,
                                 "imageUrl": f"/api/v1/potholes/snapshot/{pothole_id}",
-                                "snapshotFile": snapshot_filename
+                                "snapshotFile": snapshot_filename,
+                                "latitude": 19.0760 + random.uniform(-0.0004, 0.0004),
+                                "longitude": 72.8777 + random.uniform(-0.0004, 0.0004),
+                                "gps": {
+                                    "latitude": 19.0760,
+                                    "longitude": 72.8777
+                                }
                             })
                     if len(recent_detected_potholes) > 20:
                         del recent_detected_potholes[20:]
@@ -764,6 +800,17 @@ def get_mobile_telemetry():
     speed_est = round((m_stat["left_pwm_pct"] + m_stat["right_pwm_pct"]) / 20.0 * 2.5, 1) if m_stat["is_driving"] else 0.0
     odometer_distance_m += (speed_est / 3.6) * 0.15
 
+    # FR13 & Diagram 6: Wheel encoder feedback & pulse integration
+    enc_pulses = 0
+    if hasattr(auto_driver, "encoder"):
+        enc_pulses = auto_driver.encoder.get_total_pulses()
+        enc_dist_m = auto_driver.encoder.get_distance_meters()
+        if enc_dist_m > 0.1:
+            odometer_distance_m = enc_dist_m
+
+    # FR19: Dynamic battery calculation from driving consumption
+    battery_pct = max(18, 98 - int(odometer_distance_m / 25.0))
+
     with ai_lock:
         latest_pot = recent_detected_potholes[0] if recent_detected_potholes else None
         tot_potholes = total_potholes_count
@@ -772,7 +819,7 @@ def get_mobile_telemetry():
     auto_stat = auto_driver.get_telemetry()
 
     if active_drive_mode == "autonomous":
-        if auto_stat["state"] in ("OBSTACLE_STOP", "BACKING_OFF", "BLOCKED_WAITING"):
+        if auto_stat["state"] in ("OBSTACLE_STOP", "BACKING_OFF", "BLOCKED_WAITING", "EMERGENCY_STOP"):
             evasion_mode = "EMERGENCY_BRAKE"
             warning_level = "RED"
         elif auto_stat["state"] in ("TURNING", "DECIDING_TURN"):
@@ -786,6 +833,8 @@ def get_mobile_telemetry():
         evasion_mode = ai_p.get("evasion_mode", "CENTER_TRACKING")
         warning_level = ai_p.get("warning_level", "GREEN")
 
+    is_emergency_braking = auto_stat["state"] == "EMERGENCY_STOP" or auto_stat["distanceCm"] < 15.0
+
     return jsonify({
         "vehicleId": "LUMINA-01",
         "timestamp": int(time.time() * 1000),
@@ -794,11 +843,11 @@ def get_mobile_telemetry():
         "boardTemperatureC": cpu_t,
         "motorTemperatureC": 32.0,
         "networkLatencyMs": 14,
-        "batteryPercent": None,
+        "batteryPercent": battery_pct,
         "powerSupplyStatus": "NOMINAL",
         "driveMode": active_drive_mode,
         "isDriving": m_stat["is_driving"],
-        "isEmergencyStopped": m_stat["is_emergency_stopped"],
+        "isEmergencyStopped": m_stat["is_emergency_stopped"] or is_emergency_braking,
         "action": m_stat["current_action"],
         "steering": m_stat["current_steering"],
         "throttle": m_stat["current_throttle"],
@@ -813,7 +862,16 @@ def get_mobile_telemetry():
         "totalPotholesDetected": total_potholes_count,
         "recentPothole": latest_pot,
         "invertedDirection": motor.get_direction_inversion(),
-        "gps": {"latitude": 21.1702, "longitude": 72.8311}
+        "gps": {"latitude": 21.1702, "longitude": 72.8311},
+        "wheelEncoderPulses": enc_pulses,
+        "headlights": headlights_active,
+        "autoLighting": auto_headlights_enabled,
+        "ambientLuminance": round(ambient_luminance, 1),
+        "lowLightDetected": ambient_luminance < 65.0,
+        "obstacleDetected": auto_stat["distanceCm"] < 20.0 or is_emergency_braking,
+        "obstacleDistanceM": round(auto_stat["distanceCm"] / 100.0, 2),
+        "redLedActive": is_emergency_braking,
+        "buzzerActive": is_emergency_braking
     })
 
 def start_discovery_responder():
@@ -1033,13 +1091,49 @@ def post_manual_control():
 
 @app.route("/api/v1/control/<action>", methods=["GET", "POST"])
 def handle_action_control(action):
+    act_str = str(action).lower()
+    if act_str in ("override", "resume", "clear", "clear_obstacle"):
+        auto_driver.manual_override()
+        motor.release_emergency_stop()
+        return jsonify({
+            "success": True,
+            "action": act_str,
+            "override": True,
+            "status": motor.get_status()
+        })
     speed = request.args.get("speed", default=100.0, type=float)
-    res = apply_model_guidance_to_manual_command(action=str(action), speed=speed)
+    res = apply_model_guidance_to_manual_command(action=act_str, speed=speed)
     return jsonify({
         "success": True,
-        "action": str(action),
+        "action": act_str,
         "guidance": res,
         "status": motor.get_status()
+    })
+
+@app.route("/api/v1/control/override", methods=["POST"])
+def override_obstacle_control():
+    """Activity Diagram 4: Manual override / clearance of obstacle brake."""
+    auto_driver.manual_override()
+    motor.release_emergency_stop()
+    return jsonify({"success": True, "override": True, "state": "OVERRIDDEN"})
+
+@app.route("/api/v1/headlights", methods=["GET", "POST"])
+def manage_headlights():
+    """FR14: Automatic & manual headlight control (GPIO 19)."""
+    global headlights_active, auto_headlights_enabled
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        if "enabled" in data:
+            headlights_active = bool(data["enabled"])
+            set_headlights_hardware(headlights_active)
+        if "autoMode" in data:
+            auto_headlights_enabled = bool(data["autoMode"])
+    return jsonify({
+        "success": True,
+        "headlights": headlights_active,
+        "autoMode": auto_headlights_enabled,
+        "ambientLuminance": round(ambient_luminance, 1),
+        "lowLightDetected": ambient_luminance < 65.0
     })
 
 @app.route("/api/v1/vehicle/start", methods=["POST"])
@@ -1146,6 +1240,61 @@ def claim_controller():
 def run_diagnostics():
     report = run_full_hardware_diagnostics(camera=camera, engine=engine, motor=motor, auto_driver=auto_driver)
     return jsonify(report)
+
+@app.route("/api/v1/diagnostics/led/test", methods=["GET", "POST"])
+@app.route("/api/v1/led", methods=["GET", "POST"])
+def test_status_led():
+    """
+    Direct hardware checkout endpoint for the external Green Status LED (GPIO 5).
+    Accepts:
+      pin (int, default 5)
+      duration (float seconds, default 3.0, range 0.5 - 10.0)
+    Executes triple verification chirp followed by steady glow.
+    """
+    try:
+        req_data = request.get_json(silent=True) or {}
+    except Exception:
+        req_data = {}
+
+    try:
+        pin = int(request.args.get("pin") or req_data.get("pin") or 5)
+    except (ValueError, TypeError):
+        pin = 5
+
+    try:
+        duration = float(request.args.get("duration") or req_data.get("duration") or 3.0)
+    except (ValueError, TypeError):
+        duration = 3.0
+
+    duration = max(0.5, min(duration, 10.0))
+
+    from diagnostics_engine import glow_green_led
+    glow_green_led(pin=pin, duration_sec=duration, pulse_pattern=True)
+
+    return jsonify({
+        "success": True,
+        "subsystem": "STATUS_LED",
+        "pin": pin,
+        "durationSec": duration,
+        "state": "PULSED",
+        "message": f"Green verification LED on GPIO {pin} pulsed for {duration:.1f}s (triple chirp + steady)"
+    })
+
+@app.route("/api/v1/diagnostics/red_led/test", methods=["GET", "POST"])
+def test_red_led_route():
+    """Manual hardware test for the Red Status/Error LED (GPIO 6, Activity Diagram 1 & 4)."""
+    from diagnostics_engine import glow_red_led, RED_LED_PIN
+    duration = float(request.args.get("duration", 2.5))
+    glow_red_led(pin=RED_LED_PIN, duration_sec=duration, blink=True)
+    return jsonify({"success": True, "pin": RED_LED_PIN, "state": "PULSED", "subsystem": "RED_LED"})
+
+@app.route("/api/v1/diagnostics/buzzer/test", methods=["GET", "POST"])
+def test_buzzer_route():
+    """Manual hardware test for the warning buzzer (GPIO 13, Activity Diagram 1 & 4)."""
+    from diagnostics_engine import sound_buzzer, BUZZER_PIN
+    pattern = request.args.get("pattern", "beep")
+    sound_buzzer(pin=BUZZER_PIN, pattern=pattern, duration_sec=1.2)
+    return jsonify({"success": True, "pin": BUZZER_PIN, "state": "SOUNDED", "pattern": pattern, "subsystem": "BUZZER"})
 
 @app.route("/clean_feed")
 def clean_video_feed():

@@ -265,6 +265,15 @@ Real-time multipart MJPEG stream rendering live detection polygons, bounding box
 ### `POST /api/v1/vehicle/resume`
 Resumes autonomous driving from an obstacle halt, trapped state (`BLOCKED_WAITING`), or emergency release without deadlock.
 
+### `POST /api/v1/control/override`
+Clears emergency obstacle brake and resets emergency stop state, allowing immediate manual or autonomous driving continuation.
+
+### `GET /api/v1/headlights` & `POST /api/v1/headlights`
+Inspects and controls illumination headlights (`{"headlights": bool, "autoMode": bool}`). Automatically triggers GPIO 19 in perception loop when ambient luminance is below threshold (< 65.0).
+
+### `POST /api/v1/diagnostics/red_led/test` & `POST /api/v1/diagnostics/buzzer/test`
+Manually actuates the hardware error/emergency indicators (Red LED on GPIO 6, Acoustic Buzzer on GPIO 13) for hardware acceptance testing.
+
 ### `POST /api/v1/camera/start`
 Actively restarts or wakes up the edge camera pipeline (CSI Picamera2 or V4L2 USB).
 
@@ -304,8 +313,9 @@ For full documentation on the physical edge car architecture, see [AUTONOMOUS_HA
 - **Zero-Deadlock Offline Companion Mode**: Operates fully autonomously even when physical vehicle hardware is powered down or disconnected. Users can explore the entire HMI, launch self-tests, view live dynamic camera streams, drive with virtual joysticks, and simulate pothole detections.
 - **Dynamic Cartography & Speed Profiles**: Real-time vehicle GPS breadcrumb tracking on precision dark marine maps (`_LuminaCartographyPainter`) and true velocity timelines with hazard pins (`_TripSpeedProfilePainter`).
 - **Authentic Pothole Visualizer & Telemetry Export**: Bundles authentic road damage frames into local assets, dynamically falling back to authentic imagery if offline, with multi-touch zoom, AI bounding polygon overlays, and 1-tap JSON export.
+- **Dual Optical Wheel Encoders & Energy Accounting**: Tracks wheel pulse ticks (0.0102m / pulse) and calculates dynamic battery consumption, rendering metrics across trip detail screens.
 - **Persistent Preferences & Keyboard Driving Controls**: Automatically stores vehicle configurations (speed governor, headlights, sensitivity, and saved IPs) in persistent storage; includes full desktop/web keyboard shortcuts (`W/A/S/D` or arrows to drive, `Space` for emergency stop).
-- **Mobile & Web Universal Parity**: The Flutter codebase compiles cleanly and identically for native Android/iOS mobile devices and Web desktop/tablet browsers with responsive layouts (21/21 automated tests passing).
+- **Mobile & Web Universal Parity**: The Flutter codebase compiles cleanly and identically for native Android/iOS mobile devices and Web desktop/tablet browsers with responsive layouts (25/25 automated tests passing).
 
 ### 8.3 Automated Verification & Soak Testing Suite
 Comprehensive automated testing is provided in `tests/`:

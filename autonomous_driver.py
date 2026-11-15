@@ -17,6 +17,9 @@ import logging
 import threading
 from collections import deque
 
+from wheel_encoder import WheelEncoder
+from diagnostics_engine import glow_red_led, sound_buzzer, RED_LED_PIN, BUZZER_PIN
+
 logger = logging.getLogger("AutonomousDriver")
 
 # Hardware Pins
@@ -25,6 +28,7 @@ DEFAULT_ECHO_PIN = 26
 
 # Navigation Thresholds (Calibrated for Real Chassis Physics & Stiction)
 DEFAULT_STOP_DISTANCE_CM = 20.0       # Stop if obstacle closer than 20cm
+DEFAULT_EMERGENCY_DISTANCE_CM = 15.0  # Activity Diagram 4: Emergency braking interlock (< 15cm)
 DEFAULT_BACKOFF_DISTANCE_CM = 15.0    # Reverse slightly if closer than 15cm
 DEFAULT_CLEAR_DISTANCE_CM = 26.0      # Path considered clear to cruise
 DEFAULT_CRUISE_SPEED = 95.0           # High-torque forward cruise speed (prevents low-voltage motor stall)
@@ -82,10 +86,15 @@ class AutonomousDriver:
         self.turn_duration = float(turn_duration)
         self.max_avoid_attempts = int(max_avoid_attempts)
         self.is_simulation = is_simulation
+        self.emergency_dist_cm = float(DEFAULT_EMERGENCY_DISTANCE_CM)
+
+        # Dual Optical Wheel Encoder (FR13, Activity Diagram 6)
+        self.encoder = WheelEncoder(is_simulation=is_simulation)
 
         # State tracking
         self.state = AutonomousState.IDLE
         self.is_active = False
+        self.override_requested = False
         self._thread = None
         self._lock = threading.RLock()
 
@@ -264,6 +273,19 @@ class AutonomousDriver:
                 self.motor.emergency_stop()
             logger.warning("[SAFETY] Autonomous Emergency Stop Triggered!")
 
+    def manual_override(self):
+        """
+        Activity Diagram 4: Manual override / clearance to resume from emergency brake.
+        """
+        with self._lock:
+            self.override_requested = True
+            self.avoidance_attempts = 0
+            if hasattr(self.motor, "release_emergency_stop"):
+                self.motor.release_emergency_stop()
+            if self.state in (AutonomousState.EMERGENCY_STOP, AutonomousState.OBSTACLE_STOP, AutonomousState.BLOCKED_WAITING):
+                self.state = AutonomousState.CRUISING
+                logger.info("[Manual Override] Emergency brake cleared by operator.")
+
     def _choose_intelligent_turn_direction(self):
         """
         Intelligently decides turn direction (left or right):
@@ -336,8 +358,14 @@ class AutonomousDriver:
                             self.motor.set_drive_command(steer, throttle_norm)
                             time.sleep(0.06)
                         else:
-                            # Path is clear: drive straight ahead
-                            self.motor.set_drive_command(0.0, self.cruise_speed / 100.0)
+                            # Path is clear: drive straight ahead with FR13 encoder speed compensation
+                            compensated_pwm = self.encoder.compute_slope_compensation(
+                                target_speed_kmh=14.0,
+                                current_throttle_pwm=self.cruise_speed
+                            )
+                            self.motor.set_drive_command(0.0, compensated_pwm / 100.0)
+                            if self.is_simulation:
+                                self.encoder.record_simulated_ticks(speed_kmh=14.0, dt_sec=0.06)
                             time.sleep(0.06)
 
                         # Reset avoidance attempts on sustained clear path
@@ -349,6 +377,14 @@ class AutonomousDriver:
                         # ---------------------------------------------------------
                         logger.info(f"[Obstacle Detected] Clearance {current_dist:.1f} cm <= {self.stop_dist_cm:.1f} cm! Stopping.")
                         self.motor.stop()
+
+                        # Activity Diagram 4: Distance < 15 cm?
+                        # Cut Motor PWM to 0% Immediately, Turn ON Red LED & Sound Continuous Buzzer
+                        if current_dist < self.emergency_dist_cm:
+                            logger.warning(f"[Emergency Braking] Proximity {current_dist:.1f} cm < 15cm! Triggering Red LED & Buzzer.")
+                            glow_red_led(pin=RED_LED_PIN, duration_sec=1.5, blink=False)
+                            sound_buzzer(pin=BUZZER_PIN, pattern="continuous", duration_sec=1.0)
+
                         self.state = AutonomousState.OBSTACLE_STOP
                         time.sleep(0.08)
 

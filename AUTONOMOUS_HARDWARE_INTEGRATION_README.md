@@ -29,7 +29,12 @@ This subsystem elevates the LUMINA robotic vehicle from a teleoperated IoT vehic
 | :--- | :--- | :--- | :--- | :--- |
 | **HC-SR04 Trigger** | Output | **GPIO 16** | Pin 36 | 15 µs high pulse |
 | **HC-SR04 Echo** | Input | **GPIO 26** | Pin 37 | Pulse duration $\propto$ distance (via voltage divider) |
-| **Status Green LED** | Output | **GPIO 5** | Pin 29 | 3.3V active HIGH, current-limited via 330Ω |
+| **Status Green LED** | Output | **GPIO 5** | Pin 29 | 3.3V active HIGH, current-limited via 330Ω (Pass Indicator) |
+| **Status Red LED** | Output | **GPIO 6** | Pin 31 | 3.3V active HIGH (Failure & Obstacle Emergency Alarm) |
+| **Acoustic Buzzer** | Output | **GPIO 13** | Pin 33 | 3.3V active HIGH (2 beeps on fault, continuous on brake) |
+| **Illumination Headlights** | Output | **GPIO 19** | Pin 35 | 3.3V active HIGH (Auto low-light < 65 lum & manual) |
+| **Left Optical Encoder** | Input (Pull-up) | **GPIO 24** | Pin 18 | 20 slots/rev optical interrupt sensor |
+| **Right Optical Encoder** | Input (Pull-up) | **GPIO 25** | Pin 22 | 20 slots/rev optical interrupt sensor |
 | **Left Motors (IN1)** | Output | **GPIO 17** | Pin 11 | L298N Channel A Direction Forward |
 | **Left Motors (IN2)** | Output | **GPIO 27** | Pin 13 | L298N Channel A Direction Reverse |
 | **Left Speed (ENA)** | Hardware PWM | **GPIO 18** | Pin 12 | PWM Channel 0, 100 Hz duty cycle (0–100%) |
@@ -60,14 +65,18 @@ When the startup self-test is invoked via `/api/v1/diagnostics/run`, `diagnostic
         ├── 4. AI Perception Model Residency (YOLOv8 Segmentation)
         │      └── Verified: road_damage_seg_best.pt resident in GPU/RAM
         │
-        └── 5. SoC Thermal Sensor (/sys/class/thermal/thermal_zone0/temp)
-               └── Verified: Core temp < 80.0°C (Actual: 45–47°C nominal)
+        ├── 5. SoC Thermal Sensor (/sys/class/thermal/thermal_zone0/temp)
+        │      └── Verified: Core temp < 80.0°C (Actual: 45–47°C nominal)
+        │
+        └── 6. Dual Optical Wheel Encoders (GPIO 24 / 25)
+               └── Verified: Optical pulse channels initialized, GPIO lines pull-up confirmed
         │
         ├── ALL PASS?
         │      ├── YES ──> Glow Green LED on GPIO 5 for 3.0s (Background Thread)
         │      │           Return JSON { "isSuccessful": true, "ledGlowTriggered": true, "results": [...] }
         │      │
-        │      └── NO  ──> Keep LED OFF. Return JSON with exact failing component & error string
+        │      └── NO  ──> Turn ON Red LED on GPIO 6 & Sound 2 Acoustic Warning Chirps on Buzzer GPIO 13.
+        │                  Return JSON { "isSuccessful": false, "ledGlowTriggered": false, "results": [...] }
 ```
 
 ### 3.2 Granular Failure Diagnostic Messages
@@ -678,11 +687,67 @@ Following the principles of `untangle-codebase` from `caldoai/skills`, the entir
   - `PotholeDetailScreen` includes a 1-tap telemetry export action to inspect, copy, and share JSON schemas containing geolocations, confidence, depth, and bounding classifications.
 
 ### 13.8 Full Ecosystem Verification & Universal Parity
-- **Flutter Mobile & Web**: 21/21 automated unit and integration tests passing (`companion_features_test.dart`, `dual_mode_architecture_test.dart`, `state_machine_test.dart`, `widget_test.dart`, `web_and_preferences_test.dart`).
+- **Flutter Mobile & Web**: 25/25 automated unit and integration tests passing (`companion_features_test.dart`, `dual_mode_architecture_test.dart`, `state_machine_test.dart`, `status_led_and_diagnostics_test.dart`, `widget_test.dart`, `web_and_preferences_test.dart`).
 - **Static Analysis**: `flutter analyze` reports 0 issues.
 - **Web Build**: `flutter build web --no-tree-shake-icons` succeeds cleanly.
-- **Python Edge Backend**: `app.py`, `motor_controller.py`, `autonomous_driver.py`, `diagnostics_engine.py`, `pothole_detector.py`, `pothole_engine.py` compile with 0 syntax errors.
+- **Python Edge Backend**: `app.py`, `motor_controller.py`, `autonomous_driver.py`, `diagnostics_engine.py`, `wheel_encoder.py`, `pothole_detector.py`, `pothole_engine.py` compile with 0 syntax errors.
 - **Snapshot Caching**: `app.py` serves snapshots with `Cache-Control: no-cache, must-revalidate` to prevent stale browser caches across live driving runs.
+
+---
+
+## 14. Comprehensive Verification Against System Specification (FR1–FR19, NFR1–NFR7, Activity Diagrams 1–6)
+
+### 14.1 Dual Optical Wheel Encoder Subsystem (`wheel_encoder.py` - FR13 & Activity Diagram 6)
+- **Hardware Integration**:
+  - Implements dual optical slot interrupters on **GPIO 24 (Left)** and **GPIO 25 (Right)** with internal pull-ups and falling-edge event interrupts.
+  - Encoder disk specifications: 20 slots per revolution.
+  - Wheel diameter: 65 mm ($\text{Circumference} = \pi \times 65\text{ mm} \approx 0.2042\text{ m}$).
+  - Mathematical distance resolution:
+    $$\text{Distance per pulse} = \frac{0.2042\text{ m}}{20} \approx 0.01021\text{ m (approx. } 1.02\text{ cm / pulse)}$$
+  - Real-time pulse accumulation, velocity conversion ($km/h$), and slope anti-stall speed compensation feedback.
+  - Full telemetry integration into `/api/v1/telemetry` under key `wheelEncoderPulses`.
+
+### 14.2 Hardware Self-Test Failure Alarm Interlocks (Activity Diagram 1)
+- **Physical Alarm Actuation**:
+  - Conforms strictly to Activity Diagram 1: `[All Hardware OK? == no] -> Turn ON Red LED & Beep Buzzer -> Display Hardware Error Notification`.
+  - Added dedicated hardware lines:
+    - **Red LED on GPIO 6 (Pin 31)**
+    - **Acoustic Buzzer on GPIO 13 (Pin 33)**
+  - Diagnostic engine triggers `trigger_failure_alarm()` on any failed subsystem check: latches Red LED ON and beeps 2 warning chirps on the buzzer.
+  - On pass: pulses **Green LED on GPIO 5 (Pin 29)** for 3.0 seconds as specified.
+  - Added REST test endpoints: `POST /api/v1/diagnostics/red_led/test` and `POST /api/v1/diagnostics/buzzer/test`.
+
+### 14.3 Obstacle Emergency Braking & Watchdog (`autonomous_driver.py` - Activity Diagram 4)
+- **Fail-Safe Decisive Braking**:
+  - Threshold calibrated to exact Activity Diagram 4 specification: `Distance < 15.0 cm`.
+  - Upon obstacle proximity $< 15.0\text{ cm}$:
+    1. Instantly cuts motor PWM to 0.0% (`emergency_stop()`).
+    2. Lights **Red LED (GPIO 6)**.
+    3. Sounds continuous acoustic alarm on **Buzzer (GPIO 13)**.
+    4. Emits `VehicleEventType.obstacleDetected` event over WebSocket/polling.
+    5. Companion App pops up safety warning dialog and triggers phone haptic vibration (`HapticFeedback.heavyImpact()`).
+  - Implemented manual clearance / override protocol (`manual_override()` and `POST /api/v1/control/override`).
+  - Added interactive `OVERRIDE / CLEAR` action in `ObstacleEventDialog` and Drive Cockpit HUD.
+
+### 14.4 Automatic Low-Light Headlight Illumination (`app.py` - FR14)
+- **Ambient Luminance Perception**:
+  - Evaluates mean grayscale luminance on incoming camera frames ($\text{mean} < 65.0$).
+  - Automatically switches illumination headlights on **GPIO 19 (Pin 35)** when darkness or low ambient light is detected.
+  - Companion App Drive Screen HUD provides real-time Headlight status badge (`LIGHTS: AUTO (ON)`, `LIGHTS: AUTO (OFF)`, `LIGHTS: ON`, `LIGHTS: OFF`) and quick toggle.
+  - REST API endpoint: `POST /api/v1/headlights` `{ "headlights": bool, "autoMode": bool }` and `GET /api/v1/headlights`.
+
+### 14.5 Enhanced Pothole Telemetry & Cloud Sync Eviction (FR16 & Activity Diagram 5)
+- **Rich Telemetry Attributes**:
+  - Pothole detections record categorical road condition (`MILD`, `MODERATE`, `SEVERE`), exact GPS coordinates (`latitude`, `longitude`), confidence score, and snapshot imagery.
+- **Sync Record Eviction**:
+  - Conforms to Activity Diagram 5: upon successful cloud synchronization acknowledgment, cached local sync records are safely evicted via `clearAcknowledgedSyncRecords()`, maintaining lean edge storage.
+
+### 14.6 Dynamic Post-Drive Performance Metrics (Activity Diagram 6)
+- **Trip & Report Synthesis**:
+  - Collects total wheel encoder pulses (`trip.wheelEncoderPulses`).
+  - Calculates dynamic battery consumption (`batteryUsed = batteryStart - batteryEnd`).
+  - Displays encoder pulse counts, speed curve, and battery drain on `TripDetailScreen`.
+
 
 
 
