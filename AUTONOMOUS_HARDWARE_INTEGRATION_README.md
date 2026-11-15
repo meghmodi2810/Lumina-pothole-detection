@@ -813,6 +813,29 @@ Following the principles of `untangle-codebase` from `caldoai/skills`, the entir
    ```
    The script automatically binds the Apple device (VID `05ac`), attaches it to WSL, and invokes `xtool dev run` to compile, install, and launch the Lumina companion directly on the iPhone over the USB-C link.
 
+---
+
+## 17. Android Companion Deployment & Mobile Layout Optimization
+
+### 17.1 Physical Android Deployment (Vivo 1938 / ADB Interface)
+1. **Resolution of Windows 10055 (`WSAENOBUFS`) Socket Exhaustion**:
+   - On Windows 11 development hosts, orphaned background daemons (such as `sideloadlydaemon`) can exhaust ephemeral Winsock socket handles (>16,000 handles), triggering `fdevent_poll.cpp:64 failed to create fdevent interrupt socketpair: no buffer space` on `adb start-server`.
+   - Terminating the leaking background process restores loopback socket pairs, allowing ADB daemon to start cleanly on port 5037 and authorize physical devices (`vivo 1938`, `USV4RSEYSS89VCRS`).
+2. **Direct APK Installation**:
+   - `flutter run -d USV4RSEYSS89VCRS` compiles `build\app\outputs\flutter-apk\app-debug.apk` via Gradle and installs directly to device storage.
+
+### 17.2 Mobile Responsive Layout Hardening
+1. **Startup Self-Test Action Bar (108px Overflow Fix)**:
+   - Previously, 4 secondary buttons (`CHANGE IP`, `TEST LED`, `TEST MOTORS`, `RE-TEST`) plus the primary `ENTER DRIVE COCKPIT` button were rendered in a single unconstrained `Row`, causing a 108px horizontal overflow on 360–390px mobile screens.
+   - Refactored into a dual-tier responsive layout: secondary tools in a horizontal scrollable row, with the primary drive button occupying a full-width bottom container.
+2. **Cockpit Bottom Navigation Bar (38px Overflow Fix)**:
+   - Hardcoded 16px horizontal item padding across 5 tabs (475px total) overflowed standard phone viewports.
+   - Converted to `Expanded` flex items with `Flexible` text and `TextOverflow.ellipsis`, ensuring pixel-perfect layout across phone, tablet, and desktop viewports.
+
+### 17.3 Live Vehicle Binding Verification
+- Vehicle IP verified active at `http://10.78.252.31:5000`.
+- Real hardware diagnostics return **7/7 physical checks passing** (Storage, HC-SR04 sonar at 65.0 cm, CSI camera, YOLOv8 model, CPU thermal, L298N motors, and Wi-Fi link) with physical 3-second green LED pulse on GPIO 5.
+
 
 
 

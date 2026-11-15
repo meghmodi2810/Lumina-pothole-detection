@@ -228,7 +228,7 @@ On the Raspberry Pi 4B, the car can run as an automatic systemd background servi
 
 ### 6.2 Connecting the Mobile / iPad Companion App
 1. Connect your iPad, phone, or laptop to the **same Wi-Fi / mobile hotspot** as the Raspberry Pi.
-2. In the LUMINA Companion App (or Web Cockpit), enter the car's IP (e.g. `http://10.43.219.31:5000`).
+2. In the LUMINA Companion App (or Web Cockpit), enter the car's IP (e.g. `http://10.78.252.31:5000` or auto-scan).
 3. The app establishes a direct, low-latency link with live MJPEG camera streaming, 50Hz ultrasonic proximity monitoring, and instant touch/keyboard drive control.
 
 ---
