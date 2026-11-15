@@ -23,20 +23,23 @@ This subsystem elevates the LUMINA robotic vehicle from a teleoperated IoT vehic
 
 ---
 
-## 2. Hardware Architecture & Pin Configuration
+## 2. Hardware Architecture & Pin Configuration (Reversed Chassis Mechanics)
 
-| Component | Hardware Interface | Raspberry Pi Pin (BCM) | Physical Header Pin | Electrical Characteristics |
-| :--- | :--- | :--- | :--- | :--- |
-| **HC-SR04 Trigger** | Output | **GPIO 16** | Pin 36 | 15 µs high pulse |
-| **HC-SR04 Echo** | Input | **GPIO 26** | Pin 37 | Pulse duration $\propto$ distance (via voltage divider) |
-| **Status Green LED** | Output | **GPIO 5** | Pin 29 | 3.3V active HIGH, current-limited via 330Ω (Pass Indicator) |
-| **Left Motors (IN1)** | Output | **GPIO 17** | Pin 11 | L298N Channel A Direction Forward |
-| **Left Motors (IN2)** | Output | **GPIO 27** | Pin 13 | L298N Channel A Direction Reverse |
-| **Left Speed (ENA)** | Hardware PWM | **GPIO 18** | Pin 12 | PWM Channel 0, 100 Hz duty cycle (0–100%) |
-| **Right Motors (IN3)** | Output | **GPIO 22** | Pin 15 | L298N Channel B Direction Forward |
-| **Right Motors (IN4)** | Output | **GPIO 23** | Pin 16 | L298N Channel B Direction Reverse |
-| **Right Speed (ENB)** | Hardware PWM | **GPIO 12** | Pin 32 | PWM Channel 0, 100 Hz duty cycle (0–100%) |
-| **CSI Camera** | MIPI CSI-2 | Unicam /dev/media0 | 15-pin Ribbon | Sony IMX219 / OmniVision OV5647 1080p |
+> [!IMPORTANT]
+> **Reversed Chassis Orientation**: The CSI camera and HC-SR04 ultrasonic distance sensor are fixed on the physical rear of the vehicle. The mechanical kinematics have been reversed so that this physical rear acts as the vehicle **FRONT** (primary forward travel and perception direction). All motor controls, autonomous obstacle navigation, and vision evasion coordinates are mapped to this forward-facing perspective.
+
+| Component | Hardware Interface | Raspberry Pi Pin (BCM) | Physical Header Pin | Electrical Characteristics | Reversed Kinematic Role |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **HC-SR04 Trigger** | Output | **GPIO 16** | Pin 36 | 15 µs high pulse | Front distance trigger |
+| **HC-SR04 Echo** | Input | **GPIO 26** | Pin 37 | Pulse duration $\propto$ distance (via voltage divider) | Front obstacle echo |
+| **Status Green LED** | Output | **GPIO 5** | Pin 29 | 3.3V active HIGH, current-limited via 330Ω | Pass indicator |
+| **Left Motors (IN1)** | Output | **GPIO 23** | Pin 16 | L298N Channel B (Physical Rear Right) | Direction Forward (Towards Camera) |
+| **Left Motors (IN2)** | Output | **GPIO 22** | Pin 15 | L298N Channel B (Physical Rear Right) | Direction Reverse (Away from Camera) |
+| **Left Speed (ENA)** | Hardware PWM | **GPIO 12** | Pin 32 | PWM Channel 0, 100 Hz duty cycle (0–100%) | Left Wheel Pair PWM Control |
+| **Right Motors (IN3)** | Output | **GPIO 27** | Pin 13 | L298N Channel A (Physical Rear Left) | Direction Forward (Towards Camera) |
+| **Right Motors (IN4)** | Output | **GPIO 17** | Pin 11 | L298N Channel A (Physical Rear Left) | Direction Reverse (Away from Camera) |
+| **Right Speed (ENB)** | Hardware PWM | **GPIO 18** | Pin 12 | PWM Channel 0, 100 Hz duty cycle (0–100%) | Right Wheel Pair PWM Control |
+| **CSI Camera** | MIPI CSI-2 | Unicam /dev/media0 | 15-pin Ribbon | Sony IMX219 / OmniVision OV5647 1080p | Forward Vision Perception & Segmentation |
 
 ---
 
@@ -149,12 +152,13 @@ If any component fails, the engine provides exact root-cause diagnostics to the 
 ### 5.1 Power Rail Dynamics & Inrush Spike Protection
 During initial testing with standard L298N logic (pulling ENA/ENB permanently HIGH to 100% full battery voltage), abrupt direction reversals (e.g. from backward to pivot spin) created large inrush current spikes ($> 2.5\text{A}$), pulling down the battery rail and triggering a 5V buck-converter brownout reboot on the Raspberry Pi.
 
-### 5.2 Hardware PWM Solution
-`motor_controller.py` was refactored with hardware PWM speed modulation on GPIO 18 (`ENA`) and GPIO 12 (`ENB`):
-* **Forward Cruise**: Modulated to **65% duty cycle** (steady forward traction, low current draw).
-* **Reverse Clearance**: Modulated to **70% duty cycle**.
-* **Pivot Turn**: Modulated to **75% duty cycle** (sufficient torque to turn rubber tires on high-friction surfaces without tripping the PMIC).
-* **Manual Joystick**: Retains 100% full-speed capability on explicit demand.
+### 5.2 Hardware PWM & Autonomous Speed Calibration (80%)
+`motor_controller.py` and `autonomous_driver.py` are calibrated with hardware PWM speed modulation on GPIO 12 (`ENA`) and GPIO 18 (`ENB`):
+* **Autonomous Forward Cruise**: Calibrated to **80% duty cycle** (`DEFAULT_CRUISE_SPEED = 80.0`) for steady forward traction, low current draw, and smooth hazard navigation.
+* **Autonomous Reverse Clearance**: Modulated to **80% duty cycle** (`DEFAULT_REVERSE_SPEED = 80.0`).
+* **Autonomous Pivot Turn**: Modulated to **85% duty cycle** (`DEFAULT_TURN_SPEED = 85.0`) for high-torque skid steering on rubber tires.
+* **Vision Evasion Speed Modulation**: Proportional throttle modulated around 80% cruise speed (`0.65` to `0.80` throttle normalization).
+* **Manual Joystick**: Retains full 100% full-speed capability on explicit operator command.
 
 ---
 

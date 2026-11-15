@@ -290,12 +290,13 @@ For full documentation on the physical edge car architecture, see [AUTONOMOUS_HA
 - On all checks passing, pulses the **Green Status LED on GPIO 5 for 3.0 seconds**.
 - Surfaces actionable subsystem failure diagnostics if any sensor or bus is degraded.
 
-### 8.2 Closed-Loop Autonomous Driving (`/api/v1/vehicle/mode`)
-- **Situation A (Clear Path)**: Cruises forward at high-torque 95% PWM duty cycle with a **300ms Breakaway Kickstart Pulse & Progressive Decay** to overcome static floor friction and vehicle inertia without stalling.
+### 8.2 Closed-Loop Autonomous Driving & Reversed Chassis Mechanics (`/api/v1/vehicle/mode`)
+- **Reversed Chassis Kinematics**: The camera and HC-SR04 ultrasonic sensor are mounted on the physical rear of the car, which serves as the vehicle's functional **FRONT**. Motor channels are mapped accordingly: New Left Motor on GPIO 23 (IN1), GPIO 22 (IN2), GPIO 12 (ENA); New Right Motor on GPIO 27 (IN3), GPIO 17 (IN4), GPIO 18 (ENB).
+- **Situation A (Clear Path)**: Cruises forward at calibrated **80% PWM duty cycle** (`DEFAULT_CRUISE_SPEED = 80.0`) with a **300ms Breakaway Kickstart Pulse & Progressive Decay** to overcome static floor friction and vehicle inertia without stalling.
 - **Situation B (Obstacle Detected)**: Immediate motor halt when distance $\le 20.0\text{ cm}$.
-- **Situation C (Intelligent Evasion)**: Backs up 0.70s if close ($< 15.0\text{ cm}$), adaptively picks turn direction with a 0.70s high-torque pivot turn (98% PWM), avoiding repetitive loops, and verifies clearance $\ge 26.0\text{ cm}$.
+- **Situation C (Intelligent Evasion)**: Backs up 0.70s at 80% speed if close ($< 15.0\text{ cm}$), adaptively picks turn direction with a 0.70s high-torque pivot turn (85% PWM), avoiding repetitive loops, and verifies clearance $\ge 26.0\text{ cm}$.
 - **Situation D (Trapped / Blocked)**: Halts in `BLOCKED_WAITING` after 5 failed turns, resuming automatically when path clears or immediately upon tapping Resume in the mobile app.
-- **Brownout Protection & Stiction Buster**: Modulates hardware PWM on `ENA` (GPIO 18) and `ENB` (GPIO 12), ensuring differential inner wheels never drop below 55% PWM during active turns, with an inrush current soft-stagger (50ms left channel lead) to prevent multi-motor surge from dropping battery voltage.
+- **Brownout Protection & Stiction Buster**: Modulates hardware PWM on `ENA` (GPIO 12) and `ENB` (GPIO 18), ensuring differential inner wheels never drop below 55% PWM during active turns, with an inrush current soft-stagger (50ms left channel lead) to prevent multi-motor surge from dropping battery voltage.
 
 ### 8.4 Network Resilience & Dynamic Subnet Discovery
 - **Subnet Rotation Mitigation**: Automatically adapts to Android mobile hotspot DHCP randomization across sessions (`10.40.110.x`, `10.43.219.x`, `10.78.252.x`) via active subnet sensing and dual UDP port 5005 discovery.

@@ -2,15 +2,18 @@
 LUMINA Autonomous IoT Car - Motor Controller & Hardware Actuator
 Differential Drive PWM Controller for L298N / TB6612FNG Dual H-Bridge
 
-Pin Mapping (Raspberry Pi 40-Pin Header BCM):
-  - Left Motor:
-      IN1 = GPIO 17 (Pin 11) -> Direction Forward
-      IN2 = GPIO 27 (Pin 13) -> Direction Reverse
-      ENA = GPIO 18 (Pin 12) -> PWM Speed Control (0-100%)
-  - Right Motor:
-      IN3 = GPIO 22 (Pin 15) -> Direction Forward
-      IN4 = GPIO 23 (Pin 16) -> Direction Reverse
-      ENB = GPIO 12 (Pin 32) -> PWM Speed Control (0-100%)
+Pin Mapping (Raspberry Pi 40-Pin Header BCM) - REVERSED CHASSIS MECHANICS:
+  The camera and HC-SR04 ultrasonic sensor are mounted on the physical rear of the chassis,
+  which now acts as the vehicle FRONT (primary perception and forward travel direction).
+  
+  - New Left Motor (facing new camera/ultrasonic front):
+      IN1 = GPIO 23 (Pin 16) -> Direction Forward (towards camera)
+      IN2 = GPIO 22 (Pin 15) -> Direction Reverse (away from camera)
+      ENA = GPIO 12 (Pin 32) -> PWM Speed Control (0-100%)
+  - New Right Motor (facing new camera/ultrasonic front):
+      IN3 = GPIO 27 (Pin 13) -> Direction Forward (towards camera)
+      IN4 = GPIO 17 (Pin 11) -> Direction Reverse (away from camera)
+      ENB = GPIO 18 (Pin 12) -> PWM Speed Control (0-100%)
 """
 
 import time
@@ -35,10 +38,10 @@ except (ImportError, RuntimeError):
 class MotorController:
     def __init__(
         self,
-        in1=17, in2=27, ena=18,
-        in3=22, in4=23, enb=12,
+        in1=23, in2=22, ena=12,
+        in3=27, in4=17, enb=18,
         pwm_frequency=100,
-        default_speed_pct=100.0,
+        default_speed_pct=80.0,
         min_start_pwm=50,
         max_speed_ceiling=1.0,
         watchdog_timeout_sec=1.5,
