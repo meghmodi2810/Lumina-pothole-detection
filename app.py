@@ -6,6 +6,7 @@ Full real-time video stream, webcam inference, driving video analysis, and auton
 import os
 import time
 import json
+import random
 import threading
 import cv2
 import numpy as np
@@ -195,7 +196,7 @@ def _ai_perception_worker():
             
             _, detections, _ = engine.detect_and_analyze(
                 small_frame,
-                conf_threshold=0.35,
+                conf_threshold=0.25,
                 enable_box_fusion=True,
                 is_video_stream=True,
                 imgsz=320
@@ -243,7 +244,7 @@ def _ai_perception_worker():
 
                     for det in scaled_detections:
                         conf = float(det.get("confidence", 0.8))
-                        if conf >= 0.35:
+                        if conf >= 0.25:
                             dist_est = float(det.get("distance_m", 0.8))
                             sev = det.get("severity", "MODERATE").upper()
                             recent_detected_potholes.insert(0, {
@@ -269,7 +270,7 @@ def _ai_perception_worker():
                             })
                     if len(recent_detected_potholes) > 20:
                         del recent_detected_potholes[20:]
-                    total_potholes_count += len([d for d in scaled_detections if float(d.get("confidence", 0.8)) >= 0.35])
+                    total_potholes_count += len([d for d in scaled_detections if float(d.get("confidence", 0.8)) >= 0.25])
         except Exception as e:
             logger.error(f"[AI Perception] Worker exception: {e}")
         time.sleep(0.08)
@@ -402,6 +403,7 @@ def toggle_camera():
 
 def generate_video_stream():
     """Generator for live multipart MJPEG stream with AI overlay and HUD at full 30 FPS."""
+    global latest_ai_detections, latest_ai_plan
     prev_time = time.time()
     while True:
         if not camera.is_running:
@@ -414,8 +416,8 @@ def generate_video_stream():
             continue
 
         with ai_lock:
-            # Staleness guard: if perception hasn't refreshed in > 0.8s, decay stale detections
-            if time.time() - last_ai_update_time > 0.8:
+            # Staleness guard: if perception hasn't refreshed in > 1.5s, decay stale detections
+            if time.time() - last_ai_update_time > 1.5:
                 latest_ai_detections = []
                 latest_ai_plan = planner.plan([])
             cur_plan = dict(latest_ai_plan)
@@ -956,8 +958,9 @@ def apply_model_guidance_to_manual_command(steering=0.0, throttle=0.0, action=No
     - If user drives backward (reversing out of hazard): allows direct manual movement without forward restriction.
     - If user steers/turns: blends avoidance offset to steer clear of hazard rims.
     """
+    global latest_ai_detections, latest_ai_plan
     with ai_lock:
-        if time.time() - last_ai_update_time > 0.8:
+        if time.time() - last_ai_update_time > 1.5:
             latest_ai_detections = []
             latest_ai_plan = planner.plan([])
         dets = list(latest_ai_detections)

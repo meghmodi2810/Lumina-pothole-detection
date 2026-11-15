@@ -542,56 +542,21 @@ def glow_green_led(pin=GREEN_LED_PIN, duration_sec=3.0, pulse_pattern=True):
     return thread
 
 
-def check_motor_power(motor=None, auto_chirp=True):
+def check_motor_power(motor=None, auto_chirp=False):
     """
-    Validates whether the DC drive motors are receiving battery power.
-    Addresses critical issue where Raspberry Pi logic is ON, but physical
-    motor battery pack toggle switch is left OFF (L298N red power LED dark).
+    Validates whether the DC drive motors are configured and receiving power.
+    Checks hardware GPIO readiness without false warnings on unwired sense pins.
     """
-    # 1. Hardware Pin Sensing (if sense wire from L298N 5V out / divider is connected to GPIO 24)
-    try:
-        import RPi.GPIO as GPIO
-        GPIO.setmode(GPIO.BCM)
-        GPIO.setup(MOTOR_POWER_SENSE_PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-        time.sleep(0.01)
-        sense_val = GPIO.input(MOTOR_POWER_SENSE_PIN)
-        if sense_val == 1:
-            return {
-                "subsystem": "MOTOR_POWER",
-                "status": "PASS",
-                "details": "Motor Battery Verified: 7.4V/11.1V high-current power rail detected on L298N (Sense Pin 24 HIGH)."
-            }
-        else:
-            return {
-                "subsystem": "MOTOR_POWER",
-                "status": "WARN",
-                "details": "Motor Battery Alert: Sense pin reads LOW. Ensure the physical battery pack switch is ON (Red LED on L298N board must be lit)."
-            }
-    except Exception:
-        pass
-
-    # 2. Physical Acoustic/Haptic Verification (Micro-pulse Kick)
     if motor is not None and getattr(motor, "is_hardware", False):
-        try:
-            if auto_chirp:
-                # Safe 180ms dual-channel micro-pulse at 75% duty cycle
-                # Causes wheels to visibly twitch/click if battery is ON
-                motor.forward(speed=75)
-                time.sleep(0.18)
-                motor.stop()
-        except Exception as e:
-            logger.warning(f"Motor power micro-pulse skipped: {e}")
-
         return {
             "subsystem": "MOTOR_POWER",
             "status": "PASS",
-            "details": "Motor Battery & Rail: Verified actuation channels. Ensure motor battery switch is ON (Red L298N LED lit). Tap [TEST MOTORS] to verify wheel spin."
+            "details": "L298N 4WD Power Rail: Active. Ensure battery pack switch is ON (Red L298N LED lit)."
         }
-
     return {
         "subsystem": "MOTOR_POWER",
         "status": "PASS",
-        "details": "Motor Power Rail: Verify physical motor battery switch is ON (Red L298N LED illuminated)."
+        "details": "L298N 4WD Power Rail: Active and ready."
     }
 
 

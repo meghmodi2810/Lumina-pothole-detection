@@ -54,6 +54,31 @@ class TestMotorBalanceAndTrim(unittest.TestCase):
         driver = AutonomousDriver(motor_controller=self.motor, is_simulation=True)
         self.assertEqual(driver.cruise_speed, 80.0)
 
+    def test_apply_model_guidance_to_manual_command_succeeds(self):
+        """Verifies manual driving commands execute without UnboundLocalError or delay"""
+        try:
+            from app import apply_model_guidance_to_manual_command
+        except ImportError:
+            self.skipTest("OpenCV or Flask dependencies not installed in host Python environment")
+        
+        # Test all discrete actions
+        res_fwd = apply_model_guidance_to_manual_command(action="forward", speed=100.0)
+        self.assertIsNotNone(res_fwd)
+        self.assertIn("action", res_fwd)
+        
+        res_back = apply_model_guidance_to_manual_command(action="backward", speed=100.0)
+        self.assertIsNotNone(res_back)
+        
+        res_left = apply_model_guidance_to_manual_command(action="left", speed=100.0)
+        self.assertIsNotNone(res_left)
+        
+        res_right = apply_model_guidance_to_manual_command(action="right", speed=100.0)
+        self.assertIsNotNone(res_right)
+        
+        res_stop = apply_model_guidance_to_manual_command(action="stop")
+        self.assertIsNotNone(res_stop)
+        self.assertEqual(res_stop["action"], "stop")
+
 
 if __name__ == "__main__":
     unittest.main()

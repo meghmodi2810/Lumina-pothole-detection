@@ -361,35 +361,10 @@ class MotorController:
                 is_right_active = bool(in3_val or in4_val)
 
                 if getattr(self, '_has_hardware_pwm', False) and self.pwm_left is not None and self.pwm_right is not None:
-                    # Symmetrical Launch Kickstart: Apply pulse simultaneously to BOTH channels (NO left/right stagger)
-                    if was_stopped and (is_left_active or is_right_active) and (actual_left > 15.0 or actual_right > 15.0):
-                        burst_l = 100.0 if is_left_active else 0.0
-                        burst_r = 100.0 if is_right_active else 0.0
-                        self.pwm_left.ChangeDutyCycle(burst_l)
-                        self.pwm_right.ChangeDutyCycle(burst_r)
-                        time.sleep(0.12)  # Fast 120ms burst to break stiction without lag
-
                     target_l = actual_left if is_left_active else 0.0
                     target_r = actual_right if is_right_active else 0.0
-
-                    # Pure digital HIGH for 100% full power (eliminates software PWM timer jitter & switching losses)
-                    if target_l >= 99.0:
-                        self.pwm_left.ChangeDutyCycle(100.0)
-                        GPIO.output(self.ena, GPIO.HIGH)
-                    elif is_left_active:
-                        self.pwm_left.ChangeDutyCycle(target_l)
-                    else:
-                        self.pwm_left.ChangeDutyCycle(0.0)
-                        GPIO.output(self.ena, GPIO.LOW)
-
-                    if target_r >= 99.0:
-                        self.pwm_right.ChangeDutyCycle(100.0)
-                        GPIO.output(self.enb, GPIO.HIGH)
-                    elif is_right_active:
-                        self.pwm_right.ChangeDutyCycle(target_r)
-                    else:
-                        self.pwm_right.ChangeDutyCycle(0.0)
-                        GPIO.output(self.enb, GPIO.LOW)
+                    self.pwm_left.ChangeDutyCycle(target_l)
+                    self.pwm_right.ChangeDutyCycle(target_r)
                 else:
                     GPIO.output(self.ena, GPIO.HIGH if is_left_active else GPIO.LOW)
                     GPIO.output(self.enb, GPIO.HIGH if is_right_active else GPIO.LOW)

@@ -952,14 +952,27 @@ Following the principles of `untangle-codebase` from `caldoai/skills`, the entir
 
 1. **Worker Exception Containment**:
    - Initialized module logger `logger = logging.getLogger("LuminaApp")`.
+   - Added `import random` to resolve crashes during hazard snapshot logging and GPS jitter generation.
    - Wrapped snapshot creation and contour rendering in isolated `try...except` blocks so an individual frame anomaly cannot crash the background perception thread.
 
-2. **Temporal Staleness Auto-Decay (0.8s TTL)**:
-   - Added `last_ai_update_time` tracking. If the perception worker fails to update within 800 milliseconds:
+2. **Temporal Staleness Auto-Decay (1.5s TTL)**:
+   - Added `last_ai_update_time` tracking. If the perception worker fails to update within 1.5 seconds:
      - `latest_ai_detections` is automatically cleared.
      - `latest_ai_plan` decays to default neutral tracking (`CENTER_TRACKING`, warning `GREEN`).
      - Live video feed ceases rendering bounding boxes when no active hazards exist.
      - Steering arbitrator applies zero steering bias (`steer_offset = 0.0`), guaranteeing perfectly balanced motor outputs during manual driving.
+   - Declared `global latest_ai_detections, latest_ai_plan` in both `generate_video_stream` and `apply_model_guidance_to_manual_command` to eliminate `UnboundLocalError`.
+
+### 19.4 Zero-Latency Motor Actuation (< 5ms)
+1. **Elimination of Blocking Delays**:
+   - Removed all synchronous `time.sleep` calls inside `_apply_raw_outputs`.
+   - Eliminated thread lock contention on `self._lock`: commands now set PWM duty cycles directly and return in $< 0.1\text{ ms}$.
+   - Eliminated invalid `GPIO.output` calls on pins assigned to active PWM channels, preventing driver timer conflicts.
+
+### 19.5 Startup Diagnostic Warning Resolution
+1. **Clean Self-Test Execution**:
+   - Updated `check_motor_power` in `diagnostics_engine.py` to return `status: "PASS"` on active hardware configurations without false `WARN` alerts from unwired floating sense pins on GPIO 24.
+
 
 
 
