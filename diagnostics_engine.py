@@ -382,40 +382,124 @@ def glow_green_led(pin=GREEN_LED_PIN, duration_sec=3.0, pulse_pattern=True):
     Glows the vehicle's Green Status LED (GPIO 5) for duration_sec in a background thread.
     - If pulse_pattern=True: executes 3 crisp verification blinks (80ms each) followed
       by solid illumination for the remainder of duration_sec.
-    - Resilient across RPi.GPIO and Linux sysfs fallback.
+    - Multi-tier actuation cascade:
+      1. RPi.GPIO
+      2. gpiozero (Python library)
+      3. pinctrl CLI (Raspberry Pi OS 12 Bookworm standard)
+      4. raspi-gpio CLI (Raspberry Pi OS 11 Bullseye standard)
+      5. gpioset CLI (libgpiod standard)
+      6. Linux sysfs fallback (/sys/class/gpio)
     - Guarantees clean pin restoration to LOW.
     """
     def _worker():
+        # --- Helper for pulse pattern timing ---
+        if pulse_pattern and duration_sec >= 1.0:
+            pulses = 3
+            steady_time = max(0.5, duration_sec - 0.48)
+        else:
+            pulses = 0
+            steady_time = duration_sec
+
         # 1. Primary path: RPi.GPIO
         try:
             import RPi.GPIO as GPIO
             GPIO.setmode(GPIO.BCM)
             GPIO.setwarnings(False)
             GPIO.setup(pin, GPIO.OUT, initial=GPIO.LOW)
-            logger.info(f"Lighting GREEN status LED on GPIO {pin} (duration={duration_sec:.1f}s, pulse={pulse_pattern})...")
+            logger.info(f"Lighting GREEN status LED via RPi.GPIO on GPIO {pin} (duration={duration_sec:.1f}s)...")
 
-            if pulse_pattern and duration_sec >= 1.0:
-                for _ in range(3):
-                    GPIO.output(pin, GPIO.HIGH)
-                    time.sleep(0.08)
-                    GPIO.output(pin, GPIO.LOW)
-                    time.sleep(0.08)
-                steady_time = max(0.5, duration_sec - 0.48)
-            else:
-                steady_time = duration_sec
+            for _ in range(pulses):
+                GPIO.output(pin, GPIO.HIGH)
+                time.sleep(0.08)
+                GPIO.output(pin, GPIO.LOW)
+                time.sleep(0.08)
 
             GPIO.output(pin, GPIO.HIGH)
             time.sleep(steady_time)
             GPIO.output(pin, GPIO.LOW)
-            logger.info(f"Extinguished GREEN status LED on GPIO {pin}.")
+            logger.info(f"Extinguished GREEN status LED on GPIO {pin} (RPi.GPIO).")
             return
         except ImportError:
-            logger.info(f"[SIMULATED] Green status LED on GPIO {pin} pulsed for {duration_sec:.1f}s.")
-            return
+            pass
         except Exception as gpio_err:
-            logger.warning(f"RPi.GPIO failed on GPIO {pin}: {gpio_err}. Attempting Linux sysfs fallback...")
+            logger.warning(f"RPi.GPIO failed on GPIO {pin}: {gpio_err}.")
 
-        # 2. Secondary path: Linux sysfs GPIO (/sys/class/gpio)
+        # 2. Secondary path: gpiozero
+        try:
+            from gpiozero import LED
+            led = LED(pin)
+            logger.info(f"Lighting GREEN status LED via gpiozero on GPIO {pin} (duration={duration_sec:.1f}s)...")
+            for _ in range(pulses):
+                led.on()
+                time.sleep(0.08)
+                led.off()
+                time.sleep(0.08)
+            led.on()
+            time.sleep(steady_time)
+            led.off()
+            led.close()
+            logger.info(f"Extinguished GREEN status LED on GPIO {pin} (gpiozero).")
+            return
+        except ImportError:
+            pass
+        except Exception as gz_err:
+            logger.warning(f"gpiozero failed on GPIO {pin}: {gz_err}.")
+
+        # 3. Tertiary path: pinctrl CLI (Official tool on Raspberry Pi OS Bookworm)
+        try:
+            res = subprocess.run(["which", "pinctrl"], capture_output=True, text=True)
+            if res.returncode == 0:
+                logger.info(f"Lighting GREEN status LED via pinctrl on GPIO {pin}...")
+                for _ in range(pulses):
+                    subprocess.run(["pinctrl", "set", str(pin), "op", "dh"], check=False)
+                    time.sleep(0.08)
+                    subprocess.run(["pinctrl", "set", str(pin), "op", "dl"], check=False)
+                    time.sleep(0.08)
+                subprocess.run(["pinctrl", "set", str(pin), "op", "dh"], check=False)
+                time.sleep(steady_time)
+                subprocess.run(["pinctrl", "set", str(pin), "op", "dl"], check=False)
+                logger.info(f"Extinguished GREEN status LED on GPIO {pin} (pinctrl).")
+                return
+        except Exception as pe:
+            logger.warning(f"pinctrl failed on GPIO {pin}: {pe}.")
+
+        # 4. Quaternary path: raspi-gpio CLI (Official tool on Raspberry Pi OS Bullseye)
+        try:
+            res = subprocess.run(["which", "raspi-gpio"], capture_output=True, text=True)
+            if res.returncode == 0:
+                logger.info(f"Lighting GREEN status LED via raspi-gpio on GPIO {pin}...")
+                for _ in range(pulses):
+                    subprocess.run(["raspi-gpio", "set", str(pin), "op", "dh"], check=False)
+                    time.sleep(0.08)
+                    subprocess.run(["raspi-gpio", "set", str(pin), "op", "dl"], check=False)
+                    time.sleep(0.08)
+                subprocess.run(["raspi-gpio", "set", str(pin), "op", "dh"], check=False)
+                time.sleep(steady_time)
+                subprocess.run(["raspi-gpio", "set", str(pin), "op", "dl"], check=False)
+                logger.info(f"Extinguished GREEN status LED on GPIO {pin} (raspi-gpio).")
+                return
+        except Exception as rge:
+            logger.warning(f"raspi-gpio failed on GPIO {pin}: {rge}.")
+
+        # 5. Quinary path: gpioset CLI (libgpiod)
+        try:
+            res = subprocess.run(["which", "gpioset"], capture_output=True, text=True)
+            if res.returncode == 0:
+                logger.info(f"Lighting GREEN status LED via gpioset on GPIO {pin}...")
+                for _ in range(pulses):
+                    subprocess.run(["gpioset", "0", f"{pin}=1"], check=False)
+                    time.sleep(0.08)
+                    subprocess.run(["gpioset", "0", f"{pin}=0"], check=False)
+                    time.sleep(0.08)
+                subprocess.run(["gpioset", "0", f"{pin}=1"], check=False)
+                time.sleep(steady_time)
+                subprocess.run(["gpioset", "0", f"{pin}=0"], check=False)
+                logger.info(f"Extinguished GREEN status LED on GPIO {pin} (gpioset).")
+                return
+        except Exception as gse:
+            logger.warning(f"gpioset failed on GPIO {pin}: {gse}.")
+
+        # 6. Linux sysfs GPIO (/sys/class/gpio)
         try:
             gpio_dir = f"/sys/class/gpio/gpio{pin}"
             if not os.path.exists(gpio_dir) and os.path.exists("/sys/class/gpio/export"):
@@ -436,22 +520,21 @@ def glow_green_led(pin=GREEN_LED_PIN, duration_sec=3.0, pulse_pattern=True):
                     with open(val_file, "w") as f:
                         f.write(str(val))
 
-            if pulse_pattern and duration_sec >= 1.0:
-                for _ in range(3):
-                    _sysfs_write(1)
-                    time.sleep(0.08)
-                    _sysfs_write(0)
-                    time.sleep(0.08)
-                steady_time = max(0.5, duration_sec - 0.48)
-            else:
-                steady_time = duration_sec
+            for _ in range(pulses):
+                _sysfs_write(1)
+                time.sleep(0.08)
+                _sysfs_write(0)
+                time.sleep(0.08)
 
             _sysfs_write(1)
             time.sleep(steady_time)
             _sysfs_write(0)
             logger.info(f"Sysfs GREEN status LED on GPIO {pin} completed successfully.")
-        except Exception as sysfs_err:
-            logger.error(f"Both RPi.GPIO and sysfs failed for GPIO {pin}: {sysfs_err}")
+            return
+        except Exception:
+            pass
+
+        logger.info(f"[SIMULATED] Green status LED on GPIO {pin} pulsed for {duration_sec:.1f}s (hardware drivers unavailable).")
 
     thread = threading.Thread(target=_worker, name="GreenLedGlowThread", daemon=True)
     thread.start()

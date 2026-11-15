@@ -735,9 +735,36 @@ Following the principles of `untangle-codebase` from `caldoai/skills`, the entir
 
 ### 14.6 Dynamic Post-Drive Performance Metrics (Activity Diagram 6)
 - **Trip & Report Synthesis**:
-  - Collects total wheel encoder pulses (`trip.wheelEncoderPulses`).
   - Calculates dynamic battery consumption (`batteryUsed = batteryStart - batteryEnd`).
-  - Displays encoder pulse counts, speed curve, and battery drain on `TripDetailScreen`.
+  - Displays speed curve, distance, and battery drain on `TripDetailScreen`.
+
+---
+
+## 15. On-Device Web Server, iPad Hotspot Networking & Multi-Tier LED Diagnostics
+
+### 15.1 Multi-Tier Hardware Cascade for Green Status LED (GPIO 5 / Pin 29)
+- **Problem**: On Raspberry Pi OS Bookworm (Debian 12), legacy `RPi.GPIO` can raise `ImportError` or fail inside Python virtual environments, and `/sys/class/gpio` is deprecated in Linux 6.x kernels.
+- **Solution**: Enhanced `glow_green_led()` in `diagnostics_engine.py` with a 6-tier hardware cascade:
+  1. `RPi.GPIO` (classic Broadcom BCM)
+  2. `gpiozero` Python library
+  3. `pinctrl` CLI (`pinctrl set 5 op dh` / `dl`) — official Raspberry Pi OS Bookworm standard
+  4. `raspi-gpio` CLI (`raspi-gpio set 5 op dh` / `dl`) — Raspberry Pi OS Bullseye standard
+  5. `gpioset` CLI (`gpioset 0 5=1` / `0`) — `libgpiod` standard
+  6. Linux sysfs fallback (`/sys/class/gpio/gpio5`)
+- **Direct Hardware Verification Command on Raspberry Pi**:
+  ```bash
+  # Turn LED ON:
+  pinctrl set 5 op dh
+  # Turn LED OFF:
+  pinctrl set 5 op dl
+  ```
+
+### 15.2 Universal CORS Preflight (`OPTIONS`) Handler in `app.py`
+- Added `@app.before_request` handler for `OPTIONS` HTTP requests, allowing browsers (Safari on iPad, Chrome on Android, desktop browsers) to send cross-origin control and telemetry requests from the Flutter Web app without encountering `405 Method Not Allowed`.
+
+### 15.3 iPadOS Touch Responsiveness in `DirectionalPad`
+- Replaced `GestureDetector` with `Listener` (`onPointerDown`, `onPointerUp`, `onPointerCancel`) and `HitTestBehavior.opaque` in Flutter companion web app.
+- Touch events now register instantly at the raw pointer level on iPad touchscreens without being canceled by Safari's default scroll or gesture recognizers.
 
 
 
