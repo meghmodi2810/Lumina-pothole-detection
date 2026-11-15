@@ -766,6 +766,12 @@ Following the principles of `untangle-codebase` from `caldoai/skills`, the entir
 - Replaced `GestureDetector` with `Listener` (`onPointerDown`, `onPointerUp`, `onPointerCancel`) and `HitTestBehavior.opaque` in Flutter companion web app.
 - Touch events now register instantly at the raw pointer level on iPad touchscreens without being canceled by Safari's default scroll or gesture recognizers.
 
+### 15.4 100% On-Device & Direct Peer-to-Peer Closed-Loop Architecture
+- Purged all mock AWS EC2 and cloud endpoints from both client and edge repos.
+- The car server executes all YOLOv8 segmentation inference directly on the Raspberry Pi 4B CPU.
+- Mobile companion (iOS/iPadOS/Android) and Web dashboard interact with the car exclusively over the shared local Wi-Fi / hotspot network.
+- All telemetry frames, pothole road hazard coordinates, and post-drive reports reside permanently in local device flash and on-chassis MicroSD storage.
+
 
 
 

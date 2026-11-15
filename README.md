@@ -10,24 +10,36 @@ An end-to-end autonomous smart car perception and navigation platform designed f
 
 ## 1. System Architecture
 
-Project Lumina operates as a **Hybrid Edge-Cloud Cyber-Physical System**:
+Project Lumina operates as a **100% On-Device Edge Cyber-Physical System**:
 
 ```
 +----------------------------------------------------------------------------------------+
 |                             EDGE VEHICLE (Raspberry Pi 4B)                             |
 |                                                                                        |
 |  +---------------------+        +--------------------+        +---------------------+  |
-|  |    Pi Camera V2     |        |   HC-SR04 Sensor   |        |    NEO-6M GPS       |  |
-|  | (1080p @ 30 FPS)    |        | (50Hz Safety Loop) |        | (NMEA Telemetry)    |  |
+|  |    Pi Camera V2     |        |   HC-SR04 Sensor   |        |   Green Status LED  |  |
+|  | (1080p @ 30 FPS)    |        | (50Hz Safety Loop) |        | (Pin 29 / GPIO 5)   |  |
 |  +----------+----------+        +---------+----------+        +----------+----------+  |
 |             |                             |                              |             |
 |             v                             v                              v             |
 |  +----------------------------------------------------------------------------------+  |
-|  |                          Lumina Edge Client (edge_client.py)                     |  |
-|  | - Captures downsampled frames (640x360 or 320x240)                               |  |
-|  | - Evaluates local 50Hz ultrasonic proximity safety cutoff (< 20 cm = HALT)       |  |
-|  | - Encodes JPEG buffer & streams over 5GHz Wi-Fi / LTE to Perception Core        |  |
+|  |                 On-Device Perception Core & Web Server (app.py)                   |  |
+|  | - Direct YOLOv8n-Seg CPU Inference (~85ms latency)                                |  |
+|  | - 50Hz ultrasonic proximity safety cutoff (< 20 cm = Emergency Halt)             |  |
+|  | - Differential PWM Motor Control & Autonomous Obstacle Evasion (L298N)            |  |
+|  | - Local HTTP & WebSocket API (Port 5000) for Companion App & Hotspot Driving     |  |
 |  +----------------------------------------+-----------------------------------------+  |
++-------------------------------------------|--------------------------------------------+
+                                            | (Direct Wi-Fi / Local Hotspot)
+                                            v
++----------------------------------------------------------------------------------------+
+|                      COMPANION DEVICE (iPad / iPhone / Android / Web)                  |
+|                                                                                        |
+|  - Real-time Low-Latency Cockpit MJPEG Stream & Telemetry HUD                          |
+|  - Direct Hardware Control (Touch Pointer Listeners, Keyboard WASD / Spacebar)         |
+|  - 100% On-Device Storage for Pothole Observations, GIS Coordinates & Post-Drive Logs  |
++----------------------------------------------------------------------------------------+
+```
 +-------------------------------------------|--------------------------------------------+
                                             | (Sub-15ms WebSocket / HTTP POST)
                                             v
@@ -194,45 +206,30 @@ Open your browser and navigate to **`http://127.0.0.1:5000`**.
 
 ---
 
-## 6. Cloud & Edge Deployment (AWS EC2)
+## 6. On-Device Raspberry Pi 4B & Hotspot Direct-Connect
 
-### 6.1 Deploying the Cloud Server
-1. Launch an AWS EC2 instance (`t3.medium` or `c6i.large`) with Ubuntu 24.04 LTS.
-2. In Security Groups, open **Port 22 (SSH)** and **Port 5000 (Custom TCP)**.
-3. SSH into the instance, clone this repo, and copy `models/road_damage_seg_best.pt` to the `models/` directory:
-   ```powershell
-   scp -i "key.pem" models/road_damage_seg_best.pt ubuntu@<EC2_IP>:/home/ubuntu/Lumina-pothole-detection/models/
-   ```
-4. Run the server with Uvicorn or Systemd:
+### 6.1 Starting the Car Server
+On the Raspberry Pi 4B, the car can run as an automatic systemd background service or manually:
+
+1. **Check or Restart the Background Service**:
    ```bash
+   sudo systemctl status lumina-car.service
+   sudo systemctl restart lumina-car.service
+   ```
+2. **Or Launch Manually via Terminal**:
+   ```bash
+   sudo systemctl stop lumina-car.service   # Stop background service if active
+   cd /home/lumina/lumina
+   git pull origin neel
+   source .venv/bin/activate
    python3 app.py
    ```
+   The car will bind to `http://0.0.0.0:5000`.
 
-### 6.2 Running the Raspberry Pi Edge Client
-On your Raspberry Pi 4B, run the lightweight client to capture camera frames and stream them to the cloud:
-```python
-import cv2, requests, time
-
-cap = cv2.VideoCapture(0)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)
-
-AWS_ENDPOINT = "http://<YOUR_EC2_IP>:5000/api/detect"
-
-while True:
-    ret, frame = cap.read()
-    if not ret: continue
-    
-    _, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
-    files = {'image': ('frame.jpg', buffer.tobytes(), 'image/jpeg')}
-    data = {'confidence': 0.22, 'include_hud': False}
-    
-    res = requests.post(AWS_ENDPOINT, files=files, data=data, timeout=0.8)
-    if res.status_code == 200:
-        telemetry = res.json()
-        print("Avoidance telemetry:", telemetry.get("summary"))
-    time.sleep(0.05)
-```
+### 6.2 Connecting the Mobile / iPad Companion App
+1. Connect your iPad, phone, or laptop to the **same Wi-Fi / mobile hotspot** as the Raspberry Pi.
+2. In the LUMINA Companion App (or Web Cockpit), enter the car's IP (e.g. `http://10.43.219.31:5000`).
+3. The app establishes a direct, low-latency link with live MJPEG camera streaming, 50Hz ultrasonic proximity monitoring, and instant touch/keyboard drive control.
 
 ---
 
