@@ -321,13 +321,15 @@ class MotorController:
             was_stopped = not self.is_driving
             self.is_driving = True
 
-            # Calibrated differential drive speed based on throttle with stiction minimum
+            # Calibrated differential drive speed based on throttle with assertive skid-steer bias
             base_speed = max(65.0, min(100.0, abs(throttle) * 100.0))
             if steering >= 0:
+                # Steer Right: Outer (Left) wheels drive, Inner (Right) wheels slow down aggressively
                 left_speed = base_speed
-                right_speed = max(55.0, base_speed * (1.0 - 0.40 * steering))
+                right_speed = max(20.0, base_speed * (1.0 - 1.50 * steering))
             else:
-                left_speed = max(55.0, base_speed * (1.0 - 0.40 * abs(steering)))
+                # Steer Left: Outer (Right) wheels drive, Inner (Left) wheels slow down aggressively
+                left_speed = max(20.0, base_speed * (1.0 - 1.50 * abs(steering)))
                 right_speed = base_speed
 
             is_forward = throttle >= 0

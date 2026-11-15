@@ -345,10 +345,10 @@ class AutonomousDriver:
                             self.state = AutonomousState.OBSTACLE_STOP
                             time.sleep(0.1)
                         elif evasion_mode in ("EVADE_LEFT", "EVADE_RIGHT"):
-                            steer = float(ai_plan.get("steering", 0.0))
-                            # Modulate speed around 80% cruise speed (minimum 65% to prevent stiction stall)
-                            throttle_norm = max(0.65, min(0.80, (self.cruise_speed * 0.95) / 100.0))
-                            logger.info(f"[Vision Evasion] Routing around pothole: {evasion_mode} (steer={steer:+.2f})")
+                            # Take real-time steering directive directly from YOLOv8 path planning model
+                            steer = float(ai_plan.get("target_steering", ai_plan.get("steering", 0.0)))
+                            throttle_norm = self.cruise_speed / 100.0
+                            logger.info(f"[Vision Evasion] Active model steering around pothole: {evasion_mode} (steer={steer:+.2f}, throttle={throttle_norm:.2f})")
                             self.motor.set_drive_command(steer, throttle_norm)
                             time.sleep(0.06)
                         else:

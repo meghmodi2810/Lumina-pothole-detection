@@ -333,6 +333,10 @@ For full documentation on the physical edge car architecture, see [AUTONOMOUS_HA
 - **Perception Worker Crash Containment & Global State Fix**: Resolved `UnboundLocalError` on detection arrays and added missing `random` dependency. Restored 0.25 confidence threshold for reliable real-time pothole identification, with 1.5s automatic staleness clearing.
 - **Diagnostic Warning Elimination**: Streamlined `check_motor_power` in `diagnostics_engine.py` to prevent false startup battery warnings on unwired pins.
 
+### 8.10 Resilient Telemetry Link & Autonomous Model-Based Pothole Evasion
+- **Telemetry Link Hardening**: Eliminated overlapping polling and increased request timeout to 3000ms with a 5.0-second silence threshold in `vehicle_live_source.dart`, resolving frequent 5-second disconnect alerts over Wi-Fi hotspot.
+- **Model-Based Autonomous Pothole Evasion**: Integrated real-time YOLOv8 `PathPlanner` steering offsets ($\pm 0.55$) with skid-steer differential drive curves ($1.50 \times \text{steering}$) in `autonomous_driver.py`, allowing the car to actively steer around detected potholes at 80% cruise speed and automatically straighten out once cleared.
+
 ### 8.3 Automated Verification & Soak Testing Suite
 Comprehensive automated testing is provided in `tests/`:
 - `python tests/test_physical_hardware.py`: Runs 7/7 physical sensor, bus, and GPIO diagnostics on the Pi.

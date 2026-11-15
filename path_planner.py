@@ -55,7 +55,7 @@ class PathPlanner:
             conf = det.get('confidence', 0.5)
 
             # Check if obstacle is close enough to matter (y_c > reaction threshold)
-            if yc >= self.reaction_y_thresh and conf >= 0.35:
+            if yc >= self.reaction_y_thresh and conf >= 0.25:
                 # Check if obstacle is inside or encroaching on the vehicle path corridor
                 box_x1 = det['bbox_norm'][0]
                 box_x2 = det['bbox_norm'][2]
@@ -83,21 +83,21 @@ class PathPlanner:
                 final_throttle = 0
                 warning_level = "RED"
             elif xc < 0.50:
-                # Pothole on left side -> steer right (+0.35 offset) and regulate throttle
+                # Pothole on left side -> steer right (+0.55 offset) and regulate throttle
                 evasion_mode = "EVADE_RIGHT"
-                evasion_offset = +0.35
-                final_throttle = int(base_throttle * 0.75)
+                evasion_offset = +0.55
+                final_throttle = int(base_throttle * 0.80)
                 warning_level = "AMBER"
             else:
-                # Pothole on right side or center -> steer left (-0.35 offset) and regulate throttle
+                # Pothole on right side or center -> steer left (-0.55 offset) and regulate throttle
                 evasion_mode = "EVADE_LEFT"
-                evasion_offset = -0.35
-                final_throttle = int(base_throttle * 0.75)
+                evasion_offset = -0.55
+                final_throttle = int(base_throttle * 0.80)
                 warning_level = "AMBER"
 
         target_steering = max(-1.0, min(1.0, base_steering + evasion_offset))
-        # Exponential smoothing for realistic steering dynamics (alpha = 0.35)
-        self.smoothed_steering = 0.65 * self.smoothed_steering + 0.35 * target_steering
+        # Responsive exponential smoothing for immediate avoidance (alpha = 0.75)
+        self.smoothed_steering = 0.25 * self.smoothed_steering + 0.75 * target_steering
         self.current_steering = round(float(self.smoothed_steering), 3)
         self.current_throttle = int(final_throttle)
 

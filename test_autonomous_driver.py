@@ -74,8 +74,8 @@ class TestAutonomousDriver(unittest.TestCase):
         self.assertGreater(len(drive_calls), 0)
 
     def test_situation_a_vision_pothole_evasion(self):
-        # When vision model returns EVADE_RIGHT (+0.35 steering), driver steers around pothole
-        fake_plan = {"evasion_mode": "EVADE_RIGHT", "steering": 0.35, "throttle": 31}
+        # When vision model returns EVADE_RIGHT (+0.55 steering), driver steers around pothole
+        fake_plan = {"evasion_mode": "EVADE_RIGHT", "target_steering": 0.55, "steering": 0.55, "throttle": 80}
         self.driver.plan_provider = lambda: fake_plan
         self.driver._sim_distance = 55.0
         self.driver.start()
@@ -84,9 +84,40 @@ class TestAutonomousDriver(unittest.TestCase):
 
         cmd_calls = [c for c in self.motor.calls if c[0] == "set_drive_command"]
         self.assertGreater(len(cmd_calls), 0)
-        # Check steering passed is +0.35
+        # Check steering passed is +0.55
         last_steer = cmd_calls[-1][1][0]
-        self.assertEqual(last_steer, 0.35)
+        self.assertEqual(last_steer, 0.55)
+
+    def test_situation_a_path_planner_left_and_right_evasion(self):
+        try:
+            from path_planner import PathPlanner
+        except ImportError:
+            self.skipTest("numpy not installed in host environment")
+
+        planner = PathPlanner()
+
+        # Pothole on left side (xc = 0.35, yc = 0.65)
+        det_left = [{
+            "bbox_norm": [0.25, 0.55, 0.45, 0.75],
+            "centroid_norm": [0.35, 0.65],
+            "width_norm": 0.20,
+            "confidence": 0.45
+        }]
+        plan_left = planner.plan(det_left)
+        self.assertEqual(plan_left["evasion_mode"], "EVADE_RIGHT")
+        self.assertGreater(plan_left["target_steering"], 0.4)
+
+        # Pothole on right side (xc = 0.65, yc = 0.65)
+        planner.smoothed_steering = 0.0
+        det_right = [{
+            "bbox_norm": [0.55, 0.55, 0.75, 0.75],
+            "centroid_norm": [0.65, 0.65],
+            "width_norm": 0.20,
+            "confidence": 0.45
+        }]
+        plan_right = planner.plan(det_right)
+        self.assertEqual(plan_right["evasion_mode"], "EVADE_LEFT")
+        self.assertLess(plan_right["target_steering"], -0.4)
 
     def test_situation_b_and_c_obstacle_avoidance(self):
         # Start clear, then introduce obstacle at 15cm (should stop and reverse)

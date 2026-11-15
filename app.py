@@ -735,12 +735,21 @@ recent_detected_potholes = []
 total_potholes_count = 0
 odometer_distance_m = 0.0
 
+_last_cpu_temp_val = 38.5
+_last_cpu_temp_time = 0.0
+
 def get_pi_cpu_temp():
+    global _last_cpu_temp_val, _last_cpu_temp_time
+    now = time.time()
+    if now - _last_cpu_temp_time < 2.0:
+        return _last_cpu_temp_val
     try:
         with open("/sys/class/thermal/thermal_zone0/temp", "r") as f:
-            return round(float(f.read().strip()) / 1000.0, 1)
+            _last_cpu_temp_val = round(float(f.read().strip()) / 1000.0, 1)
+            _last_cpu_temp_time = now
+            return _last_cpu_temp_val
     except Exception:
-        return 38.5
+        return _last_cpu_temp_val
 
 @app.before_request
 def handle_cors_preflight():
