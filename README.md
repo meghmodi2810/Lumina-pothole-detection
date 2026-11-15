@@ -307,7 +307,8 @@ For full documentation on the physical edge car architecture, see [AUTONOMOUS_HA
 - **Authentic Pothole Visualizer & Telemetry Export**: Bundles authentic road damage frames into local assets, dynamically falling back to authentic imagery if offline, with multi-touch zoom, AI bounding polygon overlays, and 1-tap JSON export.
 - **Dynamic Energy Accounting**: Calculates authentic battery consumption upon completing a trip session instead of dummy static numbers.
 - **Persistent Preferences & Keyboard Driving Controls**: Automatically stores vehicle configurations (speed governor, headlights, sensitivity, and saved IPs) in persistent storage; includes full desktop/web keyboard shortcuts (`W/A/S/D` or arrows to drive, `Space` for emergency stop).
-- **Mobile & Web Universal Parity**: The Flutter codebase compiles cleanly and identically for native Android/iOS mobile devices and Web desktop/tablet browsers with responsive layouts (25/25 automated tests passing).
+- **Interactive Diagnostic Troubleshooting Guides**: Replaces cryptic error codes with human-readable fault summaries and numbered step-by-step physical troubleshooting instructions (wiring pins, power checks, camera ribbon orientation, and terminal test commands) for every sensor and edge subsystem.
+- **Mobile & Web Universal Parity**: The Flutter codebase compiles cleanly and identically for native Android/iOS mobile devices and Web desktop/tablet browsers with responsive layouts (28/28 automated tests passing).
 
 ### 8.3 Automated Verification & Soak Testing Suite
 Comprehensive automated testing is provided in `tests/`:

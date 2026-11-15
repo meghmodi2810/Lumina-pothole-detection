@@ -772,6 +772,22 @@ Following the principles of `untangle-codebase` from `caldoai/skills`, the entir
 - Mobile companion (iOS/iPadOS/Android) and Web dashboard interact with the car exclusively over the shared local Wi-Fi / hotspot network.
 - All telemetry frames, pothole road hazard coordinates, and post-drive reports reside permanently in local device flash and on-chassis MicroSD storage.
 
+### 15.5 Human-Readable Diagnostics & Interactive Troubleshooting Guides
+- **Problem**: Previously, when pre-operational self-test checks failed or the companion app could not communicate with the car, the app rendered a cryptic, non-actionable alert: `HARDWARE FAULT: 1 COMPONENT FAILED CHECK` with raw networking exception codes (e.g. `ClientException OS Error: errno = 7`).
+- **Solution**:
+  1. Overhauled `StartupSelfTestScreen` with human-readable diagnostic failure headers:
+     - Connection failure: `VEHICLE CONNECTION OFFLINE`
+     - Sonar radar failure: `ULTRASONIC SENSOR (HC-SR04) FAULT`
+     - Video capture failure: `CAMERA MODULE (CSI/USB) FAULT`
+     - Perception weights missing: `AI PERCEPTION ENGINE (YOLOv8) FAULT`
+     - Disk full / mount fault: `MICROSD STORAGE CHECK FAILED`
+     - SoC temperature >= 75°C: `CORE THERMAL OVERHEAT WARNING`
+     - L298N H-bridge fault: `MOTOR CONTROLLER (L298N) FAULT`
+     - Wi-Fi socket latency: `TELEMETRY BUS LINK FAULT`
+  2. Implemented an interactive, step-by-step troubleshooting checklist for every hardware subsystem detailing specific physical pins, power requirements, wiring schematics, and terminal verification commands (e.g., Physical Pin 36 for TRIG, Pin 37 for ECHO with 1kΩ/2kΩ divider, CSI ribbon orientation, etc.).
+  3. Sanitized error messages in `DiagnosticsRepositoryImpl` to clearly identify networking faults (hotspot mismatches, wrong IP address, server stopped) rather than exposing raw socket error codes.
+  4. Added quick-action controls (`CHANGE IP`, `RE-TEST`, `TEST LED`) and contextual failure guidance on individual checklist rows.
+
 
 
 
