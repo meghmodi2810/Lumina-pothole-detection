@@ -815,7 +815,56 @@ Following the principles of `untangle-codebase` from `caldoai/skills`, the entir
 
 ---
 
-## 17. Android Companion Deployment & Mobile Layout Optimization
+## 18. Fullscreen Gaming HUD, Dual-Orientation Refactoring, Web CORS/PNA, and IP Discovery Modal
+
+### 18.1 Car IP Auto-Discovery Modal (Controlled Pairing)
+1. **Discovery Architecture**:
+   - The LUMINA car server advertises its address via UDP beacon responder on port `5005` and REST health endpoint `/api/v1/health` on port `5000`.
+   - The companion app scans the local network using UDP broadcast (`255.255.255.255` & `x.x.x.255`) and fast parallel HTTP subnet probes.
+2. **Elimination of Abrupt Auto-Transition**:
+   - Previously, locating the car automatically initiated connection and pushed the app into the self-test diagnostics screen without user confirmation.
+   - **New Controlled Flow**: Discovered carrier URLs are populated directly into the `Target IP` textbox, and a stylish modal dialog (`LUMINA CAR DISCOVERED`) pops up displaying the detected URL, latency, and offering explicit `[ CONNECT TO CAR ]` or `[ EDIT IP / DISMISS ]` actions.
+
+### 18.2 iPad Web & Browser Networking (CORS & Private Network Access)
+1. **Private Network Access (PNA) Headers**:
+   - Modern browsers (Safari on iPad, Chromium) enforce Private Network Access security when web apps make requests to local network IP addresses (`192.168.x.x`, `10.x.x.x`, `172.20.x.x`).
+   - In `pi_car_server/app.py`, added `@app.before_request` and `@app.after_request` middleware injecting:
+     - `Access-Control-Allow-Private-Network: true`
+     - `Access-Control-Allow-Origin: *`
+     - `Access-Control-Allow-Headers: Content-Type, Authorization, Access-Control-Request-Private-Network, X-Requested-With, Accept`
+     - `Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS`
+2. **Subnet Auto-Derivation & Presets**:
+   - In Flutter Web where raw `dart:io` sockets are sandboxed, the app auto-derives the subnet prefix from `Uri.base.host`.
+   - Added 1-tap preset chips for iPad Personal Hotspot (`172.20.10.31`), Android Hotspot (`192.168.43.31`), and Local LAN (`192.168.1.31`).
+
+### 18.3 Dual-Orientation (Portrait & Landscape) Universal Design
+1. **Startup Self-Test Action Bar**:
+   - Replaced horizontal scroll row with a responsive layout: in compact portrait mode (<500px), buttons are arranged in a balanced 2x2 grid (`CHANGE IP`, `TEST LED`, `TEST MOTORS`, `RE-TEST`), ensuring all options remain 100% visible and accessible without rotating the device.
+   - Refactored header row with flexible constraints to eliminate `RenderFlex` overflow on narrow mobile screens.
+2. **Cockpit AppBar & Navigation**:
+   - In portrait mode, AppBar elements cleanly collapse into compact indicators with icon buttons, preventing text squishing.
+
+### 18.4 Autonomous Cruise State Synchronization
+1. **Edge Server & Companion App Alignment**:
+   - Selecting `AUTONOMOUS` mode immediately starts `autonomous_driver.py` on the vehicle server.
+   - `LuminaAppState.switchMode(DriveMode.autonomous)` now sets `_vehicleState = VehicleState.driving` immediately upon mode confirmation.
+   - The primary action button instantly switches to **`STOP AUTONOMOUS CRUISE`** (warm coral / stop icon), eliminating user confusion.
+   - Pressing Stop halts autonomous motion and transitions the button to **`RESUME AUTONOMOUS CRUISE`** (solar lime / play icon).
+
+### 18.5 Edge-to-Edge Fullscreen Landscape Gaming Cockpit HUD
+1. **Strict Landscape Presentation**:
+   - Entering fullscreen mode locks device orientation to `[landscapeLeft, landscapeRight]` and enables borderless sticky immersive system UI (`SystemUiMode.immersiveSticky`). Exiting fullscreen restores standard orientations and system chrome.
+2. **Full-Viewport Video Stream**:
+   - Video feed expands to 100% width and height using dynamic `BoxFit.cover`.
+3. **Autonomous Mode Gaming Overlay**:
+   - High-visibility primary action button: `STOP AUTONOMOUS CRUISE` / `RESUME AUTONOMOUS CRUISE` with tactile halo.
+   - Dedicated `E-STOP` emergency stop button.
+   - Translucent cyberpunk telemetry glass card: Speed (km/h), Odometer (m), HC-SR04 Sonar (cm), Evasion status, AI Model tag.
+4. **Manual Mode Gaming Overlay**:
+   - Left Thumb Area: Translucent tactile virtual 4-Way Directional Pad (Forward, Reverse, Left, Right, Stop) with touch-and-hold continuous driving and release-to-halt safety.
+   - Right Thumb Area: Dedicated `HALT` brake button, `E-STOP` emergency stop, and `TEST HAZARD SNAP` camera trigger.
+   - Top Cybernetic Bar: Unified live telemetry indicators (Ping latency ms, Stream FPS, CPU temperature °C, Battery %).
+
 
 ### 17.1 Physical Android Deployment (Vivo 1938 / ADB Interface)
 1. **Resolution of Windows 10055 (`WSAENOBUFS`) Socket Exhaustion**:

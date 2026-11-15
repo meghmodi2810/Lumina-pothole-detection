@@ -315,6 +315,13 @@ For full documentation on the physical edge car architecture, see [AUTONOMOUS_HA
 - **Cross-Platform xtool Engine**: Built, codesigned, and packaged directly from Windows via `xtool` in Ubuntu WSL using the Darwin Swift SDK (`arm64-apple-ios`).
 - **1-Click Hardware USB-C Passthrough**: Uses `usbipd-win` to bridge the physical iPhone/iPad over USB-C into WSL, with automated 1-click deployment via `DEPLOY_TO_DEVICE.bat` or `deploy_ipad.ps1`.
 
+### 8.7 Fullscreen Landscape Gaming HUD & Dual-Orientation Universal Design
+- **Controlled IP Auto-Discovery**: Replaced abrupt auto-connecting with a confirmation modal (`LUMINA CAR DISCOVERED`) that populates the discovered IP in the textbox and lets the operator review latency and choose to connect or edit.
+- **iPad Web & Browser Parity**: Added Private Network Access (`Access-Control-Allow-Private-Network: true`) and OPTIONS preflight handling in `pi_car_server/app.py`, origin subnet auto-detection via `Uri.base.host`, and preset chips (`172.20.10.31` for iOS Hotspots, `192.168.43.31` for Android Hotspots, `192.168.1.31` for Wi-Fi).
+- **Responsive Dual-Orientation**: Completely refactored self-test action buttons into a responsive 2x2 grid in portrait mode (`CHANGE IP`, `TEST LED`, `TEST MOTORS`, `RE-TEST`), ensuring zero horizontal clipping or hidden buttons on mobile phones without requiring device tilt.
+- **Autonomous Cruise Synchronization**: Selecting autonomous mode instantly updates the application state (`isDriving = true`), dynamically toggling between `STOP AUTONOMOUS CRUISE` (warm coral) when driving and `RESUME AUTONOMOUS CRUISE` (solar lime) when halted.
+- **Edge-to-Edge Gaming Fullscreen Mode**: 1-tap fullscreen button locks to strict landscape (`SystemUiMode.immersiveSticky`) with 100% viewport camera feed, translucent gaming telemetry HUD (Speed, Distance, Radar, CPU Temp, FPS, Ping, Battery), dedicated Stop / E-Stop buttons in Autonomous mode, and a thumb-friendly virtual 4-way D-Pad in Manual mode.
+
 ### 8.3 Automated Verification & Soak Testing Suite
 Comprehensive automated testing is provided in `tests/`:
 - `python tests/test_physical_hardware.py`: Runs 7/7 physical sensor, bus, and GPIO diagnostics on the Pi.
