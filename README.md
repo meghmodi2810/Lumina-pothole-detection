@@ -351,6 +351,11 @@ For full documentation on the physical edge car architecture, see [AUTONOMOUS_HA
 - **Evasion Hold Hysteresis**: Added `min_evasion_hold_sec = 0.40` in `autonomous_driver.py` so that once an evasion is triggered, the trajectory is held for a minimum of 400ms through transient frame drops or camera angle changes, preventing twitch-steering.
 - **Zero-Latency Video Queue & Worker Optimization**: Added `cv2.CAP_PROP_BUFFERSIZE = 1` and trimmed perception loop sleep to `0.005s` in `app.py`, eliminating frame queue lag so steering commands act on instantaneous real-time video.
 
+### 8.13 Phone GNSS Injection, PDF Road Survey Reports & Cardboard Motor Trim
+- **Phone GNSS Location Injection (`DeviceGpsService`)**: Integrates real mobile device GPS via `geolocator`. Injects real-world street latitude and longitude into telemetry breadcrumbs and pothole observations, solving the lack of onboard car GPS hardware.
+- **Official PDF Road Inspection Survey (`TripPdfReportService`)**: Generates print/share-ready vector PDF survey documents with road quality scoring (Grade A/B/C), mission summary statistics, itemized hazard inventory table, and maintenance recommendations.
+- **Cardboard Track & Live Motor Trim Calibration (`/api/v1/vehicle/calibration`)**: Added live tuning sliders in the Settings screen for Left/Right motor power trim (0.70x to 1.30x), autonomous cruise speed (40% to 100%), and pothole detection confidence threshold (15% to 65%), along with a 1.2s kickstart straight drive test button to eliminate drift on low-friction cardboard surfaces.
+
 ### 8.3 Automated Verification & Soak Testing Suite
 Comprehensive automated testing is provided in `tests/`:
 - `python tests/test_physical_hardware.py`: Runs 7/7 physical sensor, bus, and GPIO diagnostics on the Pi.

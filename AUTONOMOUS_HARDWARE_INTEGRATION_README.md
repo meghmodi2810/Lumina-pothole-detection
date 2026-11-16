@@ -223,6 +223,28 @@ Switches vehicle operating mode between Manual and Autonomous.
 ### 6.3 `GET /api/v1/telemetry`
 Returns unified real-time vehicle telemetry including autonomous states, motor PWM, ultrasonic distances, and thermal readings.
 
+### 6.4 `GET /api/v1/vehicle/calibration` & `POST /api/v1/vehicle/calibration`
+Gets or dynamically updates live motor balance trim, cruise speed ceiling, and pothole detection confidence threshold without restarting Python.
+* **Request (POST)**:
+```json
+{
+  "cruise_speed": 60.0,
+  "trim_left": 1.05,
+  "trim_right": 0.95,
+  "pothole_conf_thresh": 0.20
+}
+```
+* **Response**:
+```json
+{
+  "success": true,
+  "cruise_speed": 60.0,
+  "trim": { "trim_left": 1.05, "trim_right": 0.95 },
+  "pothole_conf_thresh": 0.20,
+  "message": "Vehicle calibration applied successfully"
+}
+```
+
 ---
 
 ## 7. Verification & Automated Testing

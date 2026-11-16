@@ -176,6 +176,7 @@ latest_ai_plan = planner.plan([])
 last_ai_update_time = time.time()
 ai_lock = threading.Lock()
 last_pothole_log_time = 0.0
+active_pothole_conf_thresh = 0.25
 
 def _ai_perception_worker():
     global latest_ai_detections, latest_ai_plan, last_pothole_log_time, total_potholes_count, last_ai_update_time
@@ -202,7 +203,7 @@ def _ai_perception_worker():
             
             _, detections, _ = engine.detect_and_analyze(
                 small_frame,
-                conf_threshold=0.25,
+                conf_threshold=active_pothole_conf_thresh,
                 enable_box_fusion=True,
                 is_video_stream=True,
                 imgsz=320
@@ -825,6 +826,38 @@ def vehicle_trim():
             "message": f"Motor balance trim set: Left={motor.trim_left:.2f}, Right={motor.trim_right:.2f}"
         })
     return jsonify({"success": True, "trim": motor.get_motor_trim()})
+
+@app.route("/api/v1/vehicle/calibration", methods=["GET", "POST"])
+def vehicle_calibration():
+    """Gets or sets live dynamic vehicle calibration: cruise speed, motor trim balance, and pothole detection threshold."""
+    global active_pothole_conf_thresh
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        if "cruise_speed" in data:
+            spd = max(30.0, min(100.0, float(data["cruise_speed"])))
+            auto_driver.cruise_speed = spd
+        if "trim_left" in data or "trim_right" in data:
+            tl = float(data.get("trim_left", motor.trim_left))
+            tr = float(data.get("trim_right", motor.trim_right))
+            motor.set_motor_trim(trim_left=tl, trim_right=tr)
+        if "pothole_conf_thresh" in data or "confidence_threshold" in data:
+            cf = float(data.get("pothole_conf_thresh", data.get("confidence_threshold", active_pothole_conf_thresh)))
+            active_pothole_conf_thresh = max(0.10, min(0.95, cf))
+
+        return jsonify({
+            "success": True,
+            "cruise_speed": auto_driver.cruise_speed,
+            "trim": motor.get_motor_trim(),
+            "pothole_conf_thresh": active_pothole_conf_thresh,
+            "message": "Vehicle calibration applied successfully"
+        })
+
+    return jsonify({
+        "success": True,
+        "cruise_speed": auto_driver.cruise_speed,
+        "trim": motor.get_motor_trim(),
+        "pothole_conf_thresh": active_pothole_conf_thresh
+    })
 
 @app.route("/api/v1/telemetry", methods=["GET"])
 def get_mobile_telemetry():
