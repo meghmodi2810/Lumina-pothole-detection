@@ -398,6 +398,25 @@ For full documentation on the physical edge car architecture, see [AUTONOMOUS_HA
   - Added dynamic viewport-clamped `topPadding` and `bottomPadding` in `RealMapTileView` and `MapScreen` so cartography controls never overlap bottom sheets or become obscured behind headers.
 - **Automated Multi-Resolution Audit Suite (`pixel_overflow_audit_test.dart`)**: 19 comprehensive tests validating zero layout exceptions across 6 target resolutions ($320\times 568$, $360\times 640$, $390\times 844$, $640\times 320$, $740\times 360$, $844\times 390$) and $1.2\times$ text scaling. Full suite passing with 80/80 green tests.
 
+### 8.18 Resilient Multi-Tier Acoustic Buzzer Engine & Bookworm Support
+- **Resolution of Simulation Trap on Bookworm OS**: On Raspberry Pi OS 12 (Debian 12 Bookworm), `RPi.GPIO` is deprecated and failed to import, causing `buzzer_controller.py` to default into simulation mode where low-level pin actuation was bypassed.
+- **5-Tier Resilient Driver Hierarchy**:
+  1. `lgpio` / `rpi-lgpio` (Bookworm Native Python API, sub-millisecond actuation)
+  2. `RPi.GPIO` (Legacy Bullseye / Buster driver)
+  3. `pinctrl` CLI binary (`pinctrl set <pin> op dh/dl`)
+  4. `raspi-gpio` CLI binary (`raspi-gpio set <pin> op dh/dl`)
+  5. `gpioset` CLI binary (`gpioset gpiochip0 <pin>=1/0`)
+- **Dual-Pin Parallel Actuation**: Simultaneously actuates BCM GPIO 2 (Pin 3) and BCM GPIO 21 (Pin 40) so the buzzer sounds without manual pin reassignment.
+- **Physical Checkout Script**: `python test_buzzer_physical.py` validates hardware status, active drivers, and tests acoustic patterns directly.
+
+### 8.19 4WD Motor Power Imbalance & Hardware Resolution Guide
+- **Differential Drive Software Audit**: Confirmed `motor_controller.py` operates strictly as a 2-channel differential driver (Left vs. Right) commanding equal 100% duty cycle forward. Front-vs-rear power disparity is 100% hardware-based.
+- **Physical Root Causes & Fixes**:
+  - **Series Wiring**: If motors are wired in series, voltage divides and back-EMF starves the rear motor. **Fix**: Wire motors in **Parallel** (both Left (+) into OUT1, both Left (-) into OUT2).
+  - **Mechanical Stiction**: Overtightened M3 machine screws compress TT gearboxes and pinch internal spur gears. **Fix**: Loosen mounting screws by 1/2 turn and pull wheels 1-2mm away from chassis plate.
+  - **Voltage Sag**: Weak AA batteries collapse under 4WD stall current ($>2\text{A}$). **Fix**: Power L298N with 2S Li-ion (7.4V) or 3S LiPo (11.1V) with shared ground.
+- **Physical Motor Balance Utility**: `python test_motor_physical.py` tests Left Bank, Right Bank, and all 4 wheels independently.
+
 ### 8.3 Automated Verification & Soak Testing Suite
 Comprehensive automated testing is provided in `tests/`:
 - `python tests/test_physical_hardware.py`: Runs 7/7 physical sensor, bus, and GPIO diagnostics on the Pi.

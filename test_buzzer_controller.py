@@ -21,10 +21,23 @@ class TestBuzzerController(unittest.TestCase):
         status = self.buzzer.get_status()
         self.assertEqual(status["subsystem"], "BUZZER")
         self.assertEqual(status["pin"], 2)
+        self.assertEqual(status["activePins"], [2, 21])
+        self.assertIn("driver", status)
         self.assertTrue(status["isSimulation"])
         self.assertFalse(status["isActive"])
         self.assertIn("wiring", status)
         self.assertEqual(status["wiring"]["base"], "Resistor to GPIO 2 (Physical Pin 3)")
+
+    def test_custom_pin_and_driver_detection(self):
+        """Verifies custom pin mapping and driver naming."""
+        custom_bz = BuzzerController(pin=16, is_simulation=True)
+        try:
+            status = custom_bz.get_status()
+            self.assertEqual(status["pin"], 16)
+            self.assertEqual(status["activePins"], [16])
+            self.assertIn("driver", status)
+        finally:
+            custom_bz.cleanup()
 
     def test_non_blocking_execution(self):
         """Verifies that scheduling patterns returns instantaneously (< 15ms) to preserve FPS."""

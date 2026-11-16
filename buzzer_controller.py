@@ -23,6 +23,7 @@ import logging
 import threading
 import subprocess
 import atexit
+import shutil
 
 logger = logging.getLogger("BuzzerController")
 if not logger.handlers:
@@ -30,7 +31,25 @@ if not logger.handlers:
 
 DEFAULT_BUZZER_PIN = int(os.environ.get("LUMINA_BUZZER_PIN", 2))  # BCM 2 (Physical Pin 3 on RPi 40-Pin Header)
 
-# Detect RPi.GPIO availability
+# -----------------------------------------------------------------------------
+# Multi-Tier Hardware Detection (RPi.GPIO, lgpio, pinctrl, raspi-gpio, gpioset)
+# -----------------------------------------------------------------------------
+
+# 1. Check for real Raspberry Pi hardware environment
+IS_LINUX = os.name == "posix"
+IS_PI_HARDWARE = (
+    os.path.exists("/proc/device-tree/model")
+    or os.path.exists("/dev/gpiomem")
+    or any(os.path.exists(f"/dev/gpiochip{i}") for i in (0, 1, 2, 3, 4))
+)
+
+# 2. Check CLI tool availability
+PINCTRL_BIN = shutil.which("pinctrl")
+RASPI_GPIO_BIN = shutil.which("raspi-gpio")
+GPIOSET_BIN = shutil.which("gpioset")
+CLI_GPIO_AVAILABLE = bool(PINCTRL_BIN or RASPI_GPIO_BIN or GPIOSET_BIN)
+
+# 3. Detect RPi.GPIO availability (legacy Bullseye/Buster)
 GPIO_AVAILABLE = False
 try:
     import RPi.GPIO as GPIO
@@ -39,6 +58,44 @@ try:
     GPIO_AVAILABLE = True
 except (ImportError, RuntimeError):
     GPIO_AVAILABLE = False
+
+# 4. Detect lgpio availability (official Raspberry Pi OS 12 Bookworm library)
+LGPIO_AVAILABLE = False
+_lgpio_chip = None
+_lgpio_mod = None
+try:
+    import lgpio
+    # On Pi 5 main GPIO is chip 4; on Pi 4 / 3 / Zero it is chip 0
+    for chip_candidate in (0, 4, 1, 2, 3):
+        try:
+            h = lgpio.gpiochip_open(chip_candidate)
+            _lgpio_chip = h
+            _lgpio_mod = lgpio
+            LGPIO_AVAILABLE = True
+            break
+        except Exception:
+            continue
+except Exception:
+    LGPIO_AVAILABLE = False
+
+ANY_HARDWARE_AVAILABLE = GPIO_AVAILABLE or LGPIO_AVAILABLE or CLI_GPIO_AVAILABLE or IS_PI_HARDWARE
+
+
+def get_active_driver_name() -> str:
+    """Returns human-readable name of primary active GPIO driver."""
+    if LGPIO_AVAILABLE:
+        return "lgpio (Bookworm native)"
+    if GPIO_AVAILABLE:
+        return "RPi.GPIO (sysfs/mem)"
+    if PINCTRL_BIN:
+        return f"pinctrl CLI ({PINCTRL_BIN})"
+    if RASPI_GPIO_BIN:
+        return f"raspi-gpio CLI ({RASPI_GPIO_BIN})"
+    if GPIOSET_BIN:
+        return f"gpioset CLI ({GPIOSET_BIN})"
+    if IS_PI_HARDWARE:
+        return "Generic Pi Linux (sysfs/fallback)"
+    return "Simulation / Mock"
 
 
 class BuzzerController:
@@ -53,7 +110,7 @@ class BuzzerController:
         # and GPIO 21 (Physical Pin 40). Whichever pin the user plugs their wire into,
         # it works instantly with zero configuration!
         self.active_pins = [2, 21] if self.pin in (2, 21) else [self.pin]
-        self.is_simulation = is_simulation if is_simulation is not None else (not GPIO_AVAILABLE)
+        self.is_simulation = bool(is_simulation) if is_simulation is not None else (not ANY_HARDWARE_AVAILABLE)
         self.is_active = False
         self._lock = threading.RLock()
         self._action_queue = queue.Queue(maxsize=16)
@@ -88,24 +145,57 @@ class BuzzerController:
 
         for p in self.active_pins:
             pin_num = 3 if p == 2 else (40 if p == 21 else p)
+            initialized = False
 
-            # 1. RPi.GPIO immediate clamp
+            # Tier 1: lgpio (official Raspberry Pi OS 12 Bookworm library)
+            if LGPIO_AVAILABLE and _lgpio_mod and _lgpio_chip is not None:
+                try:
+                    _lgpio_mod.gpio_claim_output(_lgpio_chip, p, 0)
+                    _lgpio_mod.gpio_write(_lgpio_chip, p, 0)
+                    initialized = True
+                    logger.info(f"Initialized Buzzer on BCM GPIO {p} (Pin {pin_num}) with state LOW via lgpio.")
+                except Exception as e:
+                    logger.debug(f"lgpio init failed on GPIO {p}: {e}")
+
+            # Tier 2: RPi.GPIO (Bullseye / Buster)
             if GPIO_AVAILABLE:
                 try:
                     GPIO.setup(p, GPIO.OUT, initial=GPIO.LOW)
                     GPIO.output(p, GPIO.LOW)
+                    initialized = True
                     logger.info(f"Initialized Buzzer on BCM GPIO {p} (Pin {pin_num}) with state LOW via RPi.GPIO.")
                 except Exception as e:
-                    logger.warning(f"RPi.GPIO setup failed for buzzer on GPIO {p}: {e}")
+                    logger.debug(f"RPi.GPIO setup failed for buzzer on GPIO {p}: {e}")
 
-            # 2. System-level CLI clamp (pinctrl for Bookworm / raspi-gpio for Bullseye)
-            try:
-                subprocess.run(["pinctrl", "set", str(p), "op", "dl"], check=False, capture_output=True, timeout=0.3)
-            except Exception:
+            # Tier 3: pinctrl CLI (Raspberry Pi OS 12 Bookworm)
+            if PINCTRL_BIN:
                 try:
-                    subprocess.run(["raspi-gpio", "set", str(p), "op", "dl"], check=False, capture_output=True, timeout=0.3)
+                    res = subprocess.run([PINCTRL_BIN, "set", str(p), "op", "dl"], check=False, capture_output=True, timeout=0.3)
+                    if res.returncode == 0:
+                        initialized = True
+                        logger.info(f"Initialized Buzzer on BCM GPIO {p} via pinctrl (dl).")
                 except Exception:
                     pass
+
+            # Tier 4: raspi-gpio CLI (Bullseye)
+            if not initialized and RASPI_GPIO_BIN:
+                try:
+                    res = subprocess.run([RASPI_GPIO_BIN, "set", str(p), "op", "dl"], check=False, capture_output=True, timeout=0.3)
+                    if res.returncode == 0:
+                        initialized = True
+                except Exception:
+                    pass
+
+            # Tier 5: gpioset (libgpiod)
+            if not initialized and GPIOSET_BIN:
+                for chip_str in ("gpiochip0", "gpiochip4", "0", "4"):
+                    try:
+                        res = subprocess.run([GPIOSET_BIN, chip_str, f"{p}=0"], check=False, capture_output=True, timeout=0.3)
+                        if res.returncode == 0:
+                            initialized = True
+                            break
+                    except Exception:
+                        pass
 
     def _set_pin_state(self, high: bool):
         """Low-level actuation of buzzer transistor gate with dual-pin support."""
@@ -117,36 +207,55 @@ class BuzzerController:
             return
 
         for p in self.active_pins:
-            # Tier 1: RPi.GPIO
-            if GPIO_AVAILABLE:
+            actuated = False
+
+            # Tier 1: lgpio (Bookworm native Python API, sub-millisecond)
+            if LGPIO_AVAILABLE and _lgpio_mod and _lgpio_chip is not None:
                 try:
-                    GPIO.output(p, GPIO.HIGH if high else GPIO.LOW)
-                    continue
+                    _lgpio_mod.gpio_write(_lgpio_chip, p, 1 if high else 0)
+                    actuated = True
                 except Exception:
                     pass
 
-            # Tier 2: pinctrl CLI (Raspberry Pi OS 12 Bookworm)
-            try:
-                val = "dh" if high else "dl"
-                subprocess.run(["pinctrl", "set", str(p), "op", val], check=False, capture_output=True, timeout=0.2)
-                continue
-            except Exception:
-                pass
+            # Tier 2: RPi.GPIO
+            if not actuated and GPIO_AVAILABLE:
+                try:
+                    GPIO.output(p, GPIO.HIGH if high else GPIO.LOW)
+                    actuated = True
+                except Exception:
+                    pass
 
-            # Tier 3: raspi-gpio CLI (Bullseye)
-            try:
-                val = "1" if high else "0"
-                subprocess.run(["raspi-gpio", "set", str(p), "op", "dh" if high else "dl"], check=False, capture_output=True, timeout=0.2)
-                continue
-            except Exception:
-                pass
+            # Tier 3: pinctrl CLI (Raspberry Pi OS 12 Bookworm)
+            if not actuated and PINCTRL_BIN:
+                try:
+                    val = "dh" if high else "dl"
+                    res = subprocess.run([PINCTRL_BIN, "set", str(p), "op", val], check=False, capture_output=True, timeout=0.2)
+                    if res.returncode == 0:
+                        actuated = True
+                except Exception:
+                    pass
 
-            # Tier 4: gpioset (libgpiod)
-            try:
+            # Tier 4: raspi-gpio CLI (Bullseye)
+            if not actuated and RASPI_GPIO_BIN:
+                try:
+                    val = "dh" if high else "dl"
+                    res = subprocess.run([RASPI_GPIO_BIN, "set", str(p), "op", val], check=False, capture_output=True, timeout=0.2)
+                    if res.returncode == 0:
+                        actuated = True
+                except Exception:
+                    pass
+
+            # Tier 5: gpioset (libgpiod)
+            if not actuated and GPIOSET_BIN:
                 val = "1" if high else "0"
-                subprocess.run(["gpioset", "gpiochip0", f"{p}={val}"], check=False, capture_output=True, timeout=0.2)
-            except Exception:
-                pass
+                for chip in ("gpiochip0", "gpiochip4", "0", "4"):
+                    try:
+                        res = subprocess.run([GPIOSET_BIN, chip, f"{p}={val}"], check=False, capture_output=True, timeout=0.2)
+                        if res.returncode == 0:
+                            actuated = True
+                            break
+                    except Exception:
+                        pass
 
     def _start_worker(self):
         """Starts the dedicated background daemon thread for acoustic pattern sequencing."""
@@ -303,6 +412,8 @@ class BuzzerController:
         return {
             "subsystem": "BUZZER",
             "pin": self.pin,
+            "activePins": self.active_pins,
+            "driver": get_active_driver_name(),
             "isSimulation": self.is_simulation,
             "isActive": active,
             "totalBeeps": self.total_beeps,
@@ -329,8 +440,14 @@ class BuzzerController:
             pass
         self._set_pin_state(False)
 
-        # Explicitly lock physical pins to OUTPUT LOW
+        # Explicitly lock physical pins to OUTPUT LOW across all drivers
         for p in getattr(self, "active_pins", [self.pin]):
+            if LGPIO_AVAILABLE and _lgpio_mod and _lgpio_chip is not None:
+                try:
+                    _lgpio_mod.gpio_write(_lgpio_chip, p, 0)
+                except Exception:
+                    pass
+
             if not self.is_simulation and GPIO_AVAILABLE:
                 try:
                     GPIO.setup(p, GPIO.OUT, initial=GPIO.LOW)
@@ -338,13 +455,23 @@ class BuzzerController:
                 except Exception:
                     pass
 
-            try:
-                subprocess.run(["pinctrl", "set", str(p), "op", "dl"], check=False, capture_output=True, timeout=0.2)
-            except Exception:
+            if PINCTRL_BIN:
                 try:
-                    subprocess.run(["raspi-gpio", "set", str(p), "op", "dl"], check=False, capture_output=True, timeout=0.2)
+                    subprocess.run([PINCTRL_BIN, "set", str(p), "op", "dl"], check=False, capture_output=True, timeout=0.2)
                 except Exception:
                     pass
+            elif RASPI_GPIO_BIN:
+                try:
+                    subprocess.run([RASPI_GPIO_BIN, "set", str(p), "op", "dl"], check=False, capture_output=True, timeout=0.2)
+                except Exception:
+                    pass
+            elif GPIOSET_BIN:
+                for chip_str in ("gpiochip0", "gpiochip4", "0", "4"):
+                    try:
+                        subprocess.run([GPIOSET_BIN, chip_str, f"{p}=0"], check=False, capture_output=True, timeout=0.2)
+                        break
+                    except Exception:
+                        pass
 
         if self._worker_thread and self._worker_thread.is_alive():
             self._worker_thread.join(timeout=0.8)
