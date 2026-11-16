@@ -18,7 +18,7 @@ Project Lumina operates as a **100% On-Device Edge Cyber-Physical System**:
 |                                                                                        |
 |  +---------------------+   +--------------------+   +-------------------+   +--------------------+  |
 |  |    Pi Camera V2     |   |   HC-SR04 Sensor   |   |  Green Status LED |   |   Acoustic Buzzer  |  |
-|  | (1080p @ 30 FPS)    |   | (50Hz Safety Loop) |   | (Pin 29 / GPIO 5) |   | (Pin 3 / GPIO 2)   |  |
+|  | (1080p @ 30 FPS)    |   | (50Hz Safety Loop) |   | (Pin 29 / GPIO 5) |   | (Pin 40 / GPIO 21)  |  |
 |  +----------+----------+   +---------+----------+   +---------+---------+   +---------+----------+  |
 |             |                        |                        |                       |             |
 |             v                        v                        v                       v             |
@@ -357,7 +357,7 @@ For full documentation on the physical edge car architecture, see [AUTONOMOUS_HA
 - **Cardboard Track & Live Motor Trim Calibration (`/api/v1/vehicle/calibration`)**: Added live tuning sliders in the Settings screen for Left/Right motor power trim (0.70x to 1.30x), autonomous cruise speed (40% to 100%), and pothole detection confidence threshold (15% to 65%), along with a 1.2s kickstart straight drive test button to eliminate drift on low-friction cardboard surfaces.
 
 ### 8.14 Active Acoustic Signaling & Tactical Horn Engine (`buzzer_controller.py`)
-- **NPN Transistor Driver on GPIO 2 (Pin 3)**: Low-side NPN driver switching a 5V active buzzer. Explicitly initializes `GPIO.setup(2, GPIO.OUT, initial=GPIO.LOW)` to prevent spurious humming caused by the I2C1 physical pull-up on GPIO 2.
+- **NPN Transistor Driver on GPIO 21 (Pin 40)**: Low-side NPN driver switching a 5V active buzzer. Explicitly initializes `GPIO.setup(21, GPIO.OUT, initial=GPIO.LOW)` to prevent spurious humming caused by the I2C1 physical pull-up on GPIO 2.
 - **Non-Blocking Acoustic Engine**: Thread-safe background daemon worker thread (`BuzzerAudioThread`) and task queue ensures zero frame drops in the real-time YOLOv8 15–20 FPS perception loop and zero motor control jitter.
 - **Intelligent Acoustic Signatures**:
   - **Pothole Detected**: Distinctive double-chirp (80ms ON, 50ms OFF, 80ms ON) alerts driver the instant a road defect is cataloged.
@@ -366,6 +366,16 @@ For full documentation on the physical edge car architecture, see [AUTONOMOUS_HA
   - **System Startup Chime**: Ascending 3-tone arpeggio (60ms, 70ms, 120ms) confirming system readiness on server boot.
   - **Self-Test Pass Chime**: Double confirmation chime synchronized with Green Status LED glow on GPIO 5.
 - **Companion App Cockpit Integration**: Prominent tactile HORN buttons in `DriveScreen` top bar, `DriveManualView`, and `FullscreenDriveView` (both manual and autonomous modes) with haptic impact feedback and solar-lime glow, plus a `TEST BUZZER` button in `DiagnosticsScreen`.
+
+### 8.15 Offline Tactical Metric Cartography & Dynamic Trip Lifecycle System
+- **100% Offline Tactical Metric Radar (`RealMapTileView`)**: Solved the blank/coordinate tile bug when connected to the vehicle hotspot without cellular data. Renders mathematically accurate concentric radar range rings ($10\text{m}$, $25\text{m}$, $50\text{m}$, $100\text{m}$, $200\text{m}$), orientation compass rose, Mercator-calibrated $50\text{m}$ ground scale bar, pulsing vehicle heading cone, and severity-coded hazard pins.
+- **Zero-Flicker Cartography Screen (`MapScreen`)**: Eliminated render thrashing by replacing the in-build `FutureBuilder` with cached observations and dynamic state change listeners. Added live trip recording status pill and quick `+ TEST HAZARD` inspection trigger.
+- **Dynamic Trip Lifecycle Engine**:
+  - Automatically initializes a mission upon vehicle movement in Manual or Autonomous mode, or manually via `START TRIP`.
+  - Prominent cybernetic HUD ribbon on Cockpit HUD: `🔴 REC [ 02:15 ] • [ 86m ] • [ 2 HAZARDS ]` with an interactive `FINISH & SAVE TRIP` button.
+  - Finalizes and saves complete telemetry (route polyline, average velocity, battery drain, observed potholes) to local storage.
+  - 1-tap direct PDF report export on every trip card in the archive (`TripPdfReportService`).
+  - Integrated `createDemoTrip` benchmark generator allowing immediate testing of survey reports and PDF printouts without driving.
 
 ### 8.3 Automated Verification & Soak Testing Suite
 Comprehensive automated testing is provided in `tests/`:

@@ -1179,6 +1179,50 @@ Acoustic pattern generation runs on a dedicated background daemon thread (`Buzze
   - Strict `maxLines: 1` and `TextOverflow.ellipsis` guarantees it never breaks across lines or occludes cockpit driving controls.
   - Stacked non-intrusively at `top: 44` with adaptive vertical offsets if both pothole and obstacle alerts fire simultaneously.
 
+---
+
+## 24. Road Cartography Overhaul & Dynamic Trip Lifecycle System
+
+### 24.1 Root Cause Analysis of Map Blank/Coordinate Bug
+* **Slippy Tile Network Isolation**: When the companion phone connects to the vehicle's onboard Wi-Fi hotspot (`10.78.252.31`), there is no cellular or WAN gateway uplink.
+* **Deprecated Fastly CDN & User-Agent Filtering**: The previous CartoDB CDN (`cartodb-basemaps-a.global.ssl.fastly.net`) was deprecated and OpenStreetMap requires a sanctioned `User-Agent` HTTP header. When tile requests failed offline, the widget fell back to `_buildOfflineGridTile`, filling the entire screen with ugly gray boxes displaying raw Web Mercator coordinate strings (`15/23010/14490`), rendering the map unreadable.
+* **Render Thrashing**: `map_screen.dart` was calling `potholeRepo.getPotholeObservations()` inside `build()`, instantiating a new `Future` on every single telemetry tick and causing frame flickering.
+
+### 24.2 Tactical Metric Radar & Vector Field Engine (`real_map_tile_view.dart`)
+To guarantee seamless operation both online and 100% offline without cellular data:
+1. **Multi-Domain Tile Source & Custom Headers**:
+   - CartoDB Dark Matter migrated to official subdomain mirrors: `https://[a-d].basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png`.
+   - OpenStreetMap updated with sanctioned `User-Agent: LuminaCarCompanion/1.0` header.
+2. **Tactical Metric Radar (100% Offline Fallback Mode)**:
+   - When offline or when switched to `offlineRadar` mode, the map renders a precision metric vector field instead of coordinate boxes:
+     - **Concentric Metric Radar Range Rings**: Mathematically calibrated to ground distance ($10\text{m}$, $25\text{m}$, $50\text{m}$, $100\text{m}$, $200\text{m}$) using Mercator scale factor $\text{metersPerPixel} = \frac{156543.03 \cdot \cos(\text{lat})}{2^{\text{zoom}}}$.
+     - **Crosshairs & Coordinate Axes**: Labeled distance markers along $X$ and $Y$ axes.
+     - **Cardinal Heading Compass Rose**: Rotates in real-time with vehicle heading ($\text{HDG } \theta^\circ$).
+     - **Metric Ground Scale Bar**: Calibrated $50\text{m}$ scale indicator in bottom-left corner.
+     - **Pulsing Vehicle Tracking Marker**: Glowing neon solar-lime beacon with heading cone and radar pulse wave.
+     - **Interactive Severity-Coded Hazard Pins**: Severe craters in warm coral, moderate potholes in copper, with depth tags and tap hit testing.
+3. **Optimized Cartography Screen (`map_screen.dart`)**:
+   - Eliminated `FutureBuilder` in `build()`; observations are cached in state and updated via listener.
+   - Dynamic top status bar with real-time GPS coordinates, active trip indicator (`🔴 REC [01:24]`), and quick `[+ TEST HAZARD]` button for instant bench testing.
+
+### 24.3 Dynamic Trip Lifecycle & Instant PDF Report Generation
+* **How a Trip Becomes a Trip**:
+  1. **Initiation**:
+     - Auto-initiated upon vehicle movement in Manual mode (D-pad/joystick) or entering Autonomous mode.
+     - Can also be started explicitly via the `[ 🚀 START TRIP ]` button on the Cockpit HUD, Trips Screen, or Map Screen.
+  2. **Active Telemetry Logging**:
+     - Logs real GPS breadcrumb waypoints, vehicle velocity, duration timer, and battery drain.
+     - Binds camera-detected potholes (`_sessionPotholes`) to the active `tripId`.
+     - Displays a cybernetic HUD ribbon across the drive screen: `🔴 REC [ 02:45 ] • [ 86m ] • [ 2 HAZARDS ]`.
+  3. **Finalization & Persistence**:
+     - Tapping `[ ⏹️ FINISH & SAVE TRIP ]` calculates total duration, distance traveled (with indoor cardboard track estimation fallback), average velocity, and battery used.
+     - Persists the completed `Trip` record to `TripRepository` in local storage.
+     - Immediately surfaces a notification with `[ 📄 VIEW PDF REPORT ]`.
+* **Trips Archive Screen (`trips_screen.dart`)**:
+  - **Active Session Card**: Renders live duration timer, distance, hazard count, and `[ FINISH & SAVE ]` button at the top of the archive while a trip is running.
+  - **1-Tap Direct PDF Button**: Every trip card in the archive features a direct `[ 📄 PDF ]` action that compiles and prints an official A4 road inspection report (`TripPdfReportService`) without needing to open sub-menus.
+  - **Demo Mission Generator (`createDemoTrip`)**: Built-in 1-tap benchmark generator that creates a complete mission with route waypoints, sample potholes, and high-resolution images so users can test reports and PDF output immediately without driving.
+
 
 
 
