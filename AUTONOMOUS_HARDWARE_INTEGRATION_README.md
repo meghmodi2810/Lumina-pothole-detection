@@ -1276,7 +1276,64 @@ To guarantee seamless operation both online and 100% offline without cellular da
    - Eliminated `FutureBuilder` in `build()`; observations are cached in state and updated via listener.
    - Dynamic top status bar with real-time GPS coordinates, active trip indicator (`🔴 REC [01:24]`), and quick `[+ TEST HAZARD]` button for instant bench testing.
 
-### 24.3 Dynamic Trip Lifecycle & Instant PDF Report Generation
+---
+
+## 26. Zero-API-Key Map Cartography, Responsive Zero-Overflow Cockpit & Executive PDF Work Orders
+
+### 26.1 Hardware Buzzer: Why Moving to Pin 40 Requires Edge Code Sync
+* **The Root Cause**: When moving the transistor base wire from Physical Pin 3 (GPIO 2) to Physical Pin 40 (GPIO 21), the buzzer stopped responding because the Raspberry Pi on the vehicle was still executing the older running `app.py` process, which only actuated Pin 2.
+* **Dual-Pin Actuation in `buzzer_controller.py`**:
+  `buzzer_controller.py` now implements simultaneous multi-channel actuation across both GPIO 2 and GPIO 21:
+  ```python
+  self.active_pins = [2, 21] if self.pin in (2, 21) else [self.pin]
+  ```
+* **One-Step Car Update**:
+  On the Raspberry Pi vehicle terminal via SSH:
+  ```bash
+  cd ~/Lumina-pothole-detection && git pull origin neel
+  # Or test directly:
+  python3 -c "from buzzer_controller import BuzzerController; b=BuzzerController(); b.beep(0.3)"
+  ```
+  Once updated, Pin 40 operates with zero boot screaming and sounds all acoustic warnings.
+
+---
+
+### 26.2 Elimination of "API Key Required" Map Error & Blank Canvas Glitch
+* **Root Cause of "API Key Required"**: CartoDB recently deprecated public anonymous tile access on `basemaps.cartocdn.com` and began returning 256x256 image tiles stamped with `"API Key Required"`. When offline or on the vehicle's hotspot, `Image.network` failed and fell back to empty dark blue containers, leaving the entire screen black except for the top status belt.
+* **100% Free Zero-API-Key Tile Architecture**:
+  1. **ESRI Dark Gray Canvas**: `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}` — High-contrast, dark-mode aesthetic, completely free, requires NO API key.
+  2. **ESRI World Imagery (Satellite Ortho)**: `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}` — High-resolution aerial photography, NO API key.
+  3. **OpenStreetMap Standard**: `https://tile.openstreetmap.org/{z}/{x}/{y}.png` with sanctioned custom `User-Agent`.
+  4. **Tactical Metric Radar as Default Base Layer**:
+     The interactive Tactical Radar is now painted as the permanent base layer underneath all tiles. If the phone is offline or connected to the vehicle hotspot, the user **NEVER** sees a blank screen; they immediately see calibrated 10m–200m range rings, coordinate axes, rotating compass rose, scale bar, and live hazard pins.
+
+---
+
+### 26.3 Zero-Overflow Mobile Layout Overhaul
+* **Map Screen Responsive 2-Tier Header**:
+  Replaced the single overloaded 420px `Row` with a responsive two-tier layout:
+  - **Tier 1**: Brand symbol, `ROAD CARTOGRAPHY` title, and active trip recording pill (`REC mm:ss` + `FINISH`).
+  - **Tier 2**: Horizontally scrollable chip rail with real GPS coordinates, hazard count badge, and quick filter chips.
+* **Trips Screen Responsive Header**:
+  Wrapped telemetry title in `Expanded` and scaled buttons to fit on compact 360dp phone viewports without yellow-and-black RenderFlex overflow bars.
+
+---
+
+### 26.4 High-Contrast Mission Completion Modal (`MissionSummaryModal`)
+* Replaced the low-contrast, unreadable system `SnackBar` with a dedicated executive bottom sheet:
+  - **Color Contrast**: Deep obsidian background (`#0C1322`), pure white headers (`#FFFFFF`), and neon solar-lime accents (`#39FF14`).
+  - **Metrics Overview**: High-contrast tiles displaying distance traveled, mission duration, and hazards identified.
+  - **Action Buttons**: Prominent `[ VIEW FULL REPORT ]` and direct `[ PDF REPORT ]` actions with high-contrast text.
+
+---
+
+### 26.5 Executive Municipal Road Inspection PDF Work Orders
+Upgraded `TripPdfReportService` to generate comprehensive, professional civil engineering road quality reports:
+1. **Public Works Dispatch Matrix**: Priority 1 emergency dispatch for severe craters, Priority 3 routine maintenance for surface cracks.
+2. **Material & Labor Estimator**: Cold-mix asphalt requirement in kg ($\sim 18.5\text{ kg}$ per severe crater, $6.0\text{ kg}$ per moderate defect) and estimated repair crew labor hours.
+3. **ASTM D6433 Pavement Condition Index (PCI)**: Formal road grading (Grade A / B / C).
+4. **Sensor Chain Verification**: YOLOv8n-Seg model parameters, ultrasonic stop margin (15cm), and acoustic telemetry status.
+
 * **How a Trip Becomes a Trip**:
   1. **Initiation**:
      - Auto-initiated upon vehicle movement in Manual mode (D-pad/joystick) or entering Autonomous mode.
