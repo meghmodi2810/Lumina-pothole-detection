@@ -1169,6 +1169,16 @@ Acoustic pattern generation runs on a dedicated background daemon thread (`Buzze
 * **Fullscreen Gaming HUD**: Overlaid tactile HORN button in both Autonomous and Manual modes with visual solar-lime glow and haptic vibration feedback.
 * **Diagnostics Screen**: Dedicated `TEST BUZZER` button for 1-tap acoustic hardware verification.
 
+### 23.6 Portrait Mode Overhaul & Single-Line Aerospace Obstacle Alert HUD
+* **Zero-Overflow Responsive Cockpit Toolbar**:
+  - Replaced bulky `SegmentedButton` and redundant status pills in `drive_screen.dart` with a dedicated, space-calibrated cyber mode switcher (`[ 🎮 MANUAL ]` / `[ ⚡ AUTO ]`), tactile HORN button, and compact LED autonomy state badge (`ARMED` / `CRUISING`).
+  - Cleans up mobile portrait layout ($\le 360\text{dp}$ width) by eliminating text collisions, overlapping badges, and RenderFlex overflow errors.
+* **Single-Line Cyber Obstacle Alert HUD (`obstacle_event_dialog.dart`)**:
+  - Eliminated awkward multi-line text wrapping by converting the collision warning into a single-line aerospace HUD banner:
+    `[ ⚠️ OBSTACLE DETECTED ] [ 8 CM ] • BRAKE    [ OVERRIDE ] ✕`
+  - Strict `maxLines: 1` and `TextOverflow.ellipsis` guarantees it never breaks across lines or occludes cockpit driving controls.
+  - Stacked non-intrusively at `top: 44` with adaptive vertical offsets if both pothole and obstacle alerts fire simultaneously.
+
 
 
 
