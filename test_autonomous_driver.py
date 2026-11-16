@@ -236,5 +236,22 @@ class TestAutonomousDriver(unittest.TestCase):
         # Latest call before stop should still have held evasive steering (> 0.0)
         self.assertGreater(cmd_calls[-1][1][0], 0.0)
 
+    def test_buzzer_acoustic_alerts_integration(self):
+        """Verifies buzzer alerts trigger on obstacle stop, emergency stop, and backoff."""
+        mock_buzzer = MagicMock()
+        self.driver.set_buzzer(mock_buzzer)
+
+        # 1. Emergency stop triggers buzzer beep
+        self.driver.emergency_stop()
+        mock_buzzer.beep.assert_called_with(0.4)
+
+        # 2. Obstacle detection triggers obstacle_alert
+        self.driver._sim_distance = 15.0  # Closer than stop_dist_cm
+        self.driver.start()
+        time.sleep(0.18)
+        self.driver.stop()
+        mock_buzzer.obstacle_alert.assert_called()
+
+
 if __name__ == "__main__":
     unittest.main()

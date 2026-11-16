@@ -71,6 +71,10 @@ def transcode_to_h264(raw_mp4_path, web_mp4_path):
 engine = PotholeEngine(models_dir=MODELS_FOLDER, default_model="road_damage_seg_best.pt")
 planner = PathPlanner()
 
+# Initialize Hardware Acoustic Buzzer (BCM GPIO 2 / Physical Pin 3)
+from buzzer_controller import BuzzerController
+buzzer = BuzzerController(pin=2)
+
 # Global Live Stream State
 class VideoCamera:
     def __init__(self):
@@ -236,6 +240,10 @@ def _ai_perception_worker():
                 # Debounced pothole recording: log at most once per 2 seconds to eliminate duplicate spam
                 if scaled_detections and (now - last_pothole_log_time >= 2.0):
                     last_pothole_log_time = now
+                    try:
+                        buzzer.pothole_alert()
+                    except Exception as bz_err:
+                        logger.warning(f"Could not sound pothole buzzer alert: {bz_err}")
                     pothole_id = f"POT-{int(now*1000)%100000}"
                     snapshot_filename = f"{pothole_id}.jpg"
                     snapshot_path = os.path.join(SNAPSHOTS_FOLDER, snapshot_filename)
@@ -732,8 +740,15 @@ auto_driver = AutonomousDriver(
     clear_dist_cm=35.0,
     cruise_speed=80.0,
     reverse_speed=80.0,
-    turn_speed=85.0
+    turn_speed=85.0,
+    buzzer=buzzer
 )
+
+# Play cheerful startup boot chime
+try:
+    buzzer.startup_chime()
+except Exception as e:
+    logger.warning(f"Could not play startup chime: {e}")
 
 # Vehicle Autonomy State
 active_drive_mode = "manual"  # "manual" or "autonomous"
@@ -787,6 +802,7 @@ def get_vehicle_health():
             "camera": "OPERATIONAL" if cam_ok else "DEGRADED",
             "inference": "READY" if engine is not None else "DEGRADED",
             "motors": "ACTIVE" if motor.is_hardware else "SIMULATED",
+            "buzzer": "OPERATIONAL" if buzzer else "DEGRADED",
             "thermal": "OK" if cpu_t < 75.0 else "WARNING"
         },
         "temperatures": {
@@ -1119,9 +1135,27 @@ def post_manual_control():
     data = {**args_data, **form_data, **json_data}
     control = data.get("control", data)
 
-    # 1. Discrete 4-directional action (forward, backward, left, right, stop)
+    # 1. Discrete 4-directional action (forward, backward, left, right, stop, horn)
     action = data.get("action") or control.get("action")
     if action:
+        act_lower = str(action).lower()
+        if act_lower in ("horn", "beep", "honk"):
+            dur = float(data.get("duration", control.get("duration", 0.25)))
+            state = str(data.get("state", control.get("state", "pulse"))).lower()
+            if state in ("on", "start", "press"):
+                buzzer.horn_on()
+            elif state in ("off", "stop", "release"):
+                buzzer.horn_off()
+            else:
+                buzzer.horn_pulse(duration_sec=dur)
+            return jsonify({
+                "success": True,
+                "action": "horn",
+                "state": state,
+                "duration": dur,
+                "buzzer": buzzer.get_status(),
+                "status": motor.get_status()
+            })
         speed = data.get("speed") or control.get("speed") or 100.0
         res = apply_model_guidance_to_manual_command(action=str(action), speed=float(speed))
         return jsonify({
@@ -1150,6 +1184,17 @@ def post_manual_control():
 @app.route("/api/v1/control/<action>", methods=["GET", "POST"])
 def handle_action_control(action):
     act_str = str(action).lower()
+    if act_str in ("horn", "beep", "honk"):
+        dur = request.args.get("duration", default=0.25, type=float)
+        buzzer.horn_pulse(duration_sec=dur)
+        return jsonify({
+            "success": True,
+            "action": "horn",
+            "state": "pulsed",
+            "duration": dur,
+            "buzzer": buzzer.get_status(),
+            "status": motor.get_status()
+        })
     if act_str in ("override", "resume", "clear", "clear_obstacle"):
         auto_driver.manual_override()
         motor.release_emergency_stop()
@@ -1277,7 +1322,7 @@ def claim_controller():
 
 @app.route("/api/v1/diagnostics/run", methods=["GET", "POST"])
 def run_diagnostics():
-    report = run_full_hardware_diagnostics(camera=camera, engine=engine, motor=motor, auto_driver=auto_driver)
+    report = run_full_hardware_diagnostics(camera=camera, engine=engine, motor=motor, auto_driver=auto_driver, buzzer=buzzer)
     return jsonify(report)
 
 @app.route("/api/v1/diagnostics/led/test", methods=["GET", "POST"])
@@ -1317,6 +1362,58 @@ def test_status_led():
         "durationSec": duration,
         "state": "PULSED",
         "message": f"Green verification LED on GPIO {pin} pulsed for {duration:.1f}s (triple chirp + steady)"
+    })
+
+@app.route("/api/v1/vehicle/horn", methods=["GET", "POST"])
+@app.route("/api/horn", methods=["GET", "POST"])
+def vehicle_horn():
+    """
+    Tactical vehicle horn endpoint for mobile companion app & remote cockpit.
+    POST payload options:
+      - state: "pulse" (default), "on" (continuous honk), "off" (release)
+      - duration: float seconds (default 0.25)
+    """
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        state = str(data.get("state", "pulse")).lower()
+        dur = float(data.get("duration", 0.25))
+        if state in ("on", "start", "press"):
+            buzzer.horn_on()
+        elif state in ("off", "stop", "release"):
+            buzzer.horn_off()
+        else:
+            buzzer.horn_pulse(duration_sec=dur)
+        return jsonify({
+            "success": True,
+            "action": "horn",
+            "state": state,
+            "duration": dur,
+            "buzzer": buzzer.get_status()
+        })
+    return jsonify({"success": True, "buzzer": buzzer.get_status()})
+
+@app.route("/api/v1/buzzer/test", methods=["GET", "POST"])
+@app.route("/api/v1/diagnostics/buzzer", methods=["GET", "POST"])
+def test_buzzer_endpoint():
+    """Acoustic buzzer checkout endpoint for hardware validation."""
+    data = request.get_json(silent=True) or {}
+    pattern = str(data.get("pattern", "selftest")).lower()
+    if pattern == "pothole":
+        buzzer.pothole_alert()
+    elif pattern == "obstacle":
+        buzzer.obstacle_alert()
+    elif pattern == "startup":
+        buzzer.startup_chime()
+    elif pattern == "reverse":
+        buzzer.reverse_beep()
+    elif pattern == "horn":
+        buzzer.horn_pulse(0.25)
+    else:
+        buzzer.selftest_pass_chime()
+    return jsonify({
+        "success": True,
+        "pattern": pattern,
+        "buzzer": buzzer.get_status()
     })
 
 @app.route("/clean_feed")

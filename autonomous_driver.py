@@ -65,10 +65,12 @@ class AutonomousDriver:
         reverse_duration=DEFAULT_REVERSE_DURATION,
         turn_duration=DEFAULT_TURN_PULSE_DURATION,
         max_avoid_attempts=DEFAULT_MAX_AVOID_ATTEMPTS,
-        is_simulation=False
+        is_simulation=False,
+        buzzer=None
     ):
         self.motor = motor_controller
         self.plan_provider = plan_provider
+        self.buzzer = buzzer
         self.trig_pin = trig_pin
         self.echo_pin = echo_pin
 
@@ -266,12 +268,21 @@ class AutonomousDriver:
                     logger.error(f"Error stopping motors: {e}")
             logger.info(f"Autonomous Mode halted. State set to: {self.state}")
 
+    def set_buzzer(self, buzzer):
+        """Attaches BuzzerController for non-blocking acoustic warnings."""
+        self.buzzer = buzzer
+
     def emergency_stop(self):
         """Emergency cut: stops autonomous mode and asserts motor controller emergency stop."""
         with self._lock:
             self.stop(state=AutonomousState.EMERGENCY_STOP)
             if hasattr(self.motor, "emergency_stop"):
                 self.motor.emergency_stop()
+            if self.buzzer:
+                try:
+                    self.buzzer.beep(0.4)
+                except Exception:
+                    pass
             logger.warning("[SAFETY] Autonomous Emergency Stop Triggered!")
 
     def manual_override(self):
@@ -389,6 +400,11 @@ class AutonomousDriver:
                         logger.info(f"[Obstacle Detected] Clearance {current_dist:.1f} cm <= {self.stop_dist_cm:.1f} cm! Stopping.")
                         self.motor.stop()
                         self.state = AutonomousState.OBSTACLE_STOP
+                        if self.buzzer:
+                            try:
+                                self.buzzer.obstacle_alert()
+                            except Exception:
+                                pass
                         time.sleep(0.08)
 
                 # -------------------------------------------------------------
@@ -399,6 +415,11 @@ class AutonomousDriver:
                     if current_dist < self.backoff_dist_cm:
                         logger.info(f"[Proximity Close: {current_dist:.1f} cm] Reversing {self.reverse_duration}s for turn clearance...")
                         self.state = AutonomousState.BACKING_OFF
+                        if self.buzzer:
+                            try:
+                                self.buzzer.reverse_beep()
+                            except Exception:
+                                pass
                         self.motor.backward(self.reverse_speed)
                         time.sleep(self.reverse_duration)
                         self.motor.stop()
@@ -418,6 +439,11 @@ class AutonomousDriver:
                         )
                         self.state = AutonomousState.BLOCKED_WAITING
                         self.motor.stop()
+                        if self.buzzer:
+                            try:
+                                self.buzzer.beep(0.3)
+                            except Exception:
+                                pass
                         continue
 
                     # Intelligently pick direction

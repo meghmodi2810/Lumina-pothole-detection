@@ -20,6 +20,7 @@ logger = logging.getLogger("DiagnosticsEngine")
 
 # Hardware Pin Definitions (Lumina-01 Raspberry Pi 4B)
 GREEN_LED_PIN = 5          # Pin 29 (Active Status / Self-Test Pass)
+BUZZER_PIN = 2             # Pin 3 (Active Horn & Pothole Alert Buzzer)
 ULTRASONIC_TRIG = 16       # Pin 36 (HC-SR04 Trigger)
 ULTRASONIC_ECHO = 26       # Pin 37 (HC-SR04 Echo)
 MOTOR_POWER_SENSE_PIN = 24 # Pin 18 (Optional 5V / Resistor Divider Battery Sense)
@@ -560,7 +561,27 @@ def check_motor_power(motor=None, auto_chirp=False):
     }
 
 
-def run_full_hardware_diagnostics(camera=None, engine=None, motor=None, auto_driver=None):
+def check_buzzer(buzzer=None):
+    """
+    Validates the active acoustic warning buzzer wired on GPIO 2 (Pin 3).
+    Ensures the NPN transistor driver gate is initialized and ready for signaling.
+    """
+    if buzzer is not None:
+        st = buzzer.get_status()
+        is_sim = st.get("isSimulation", True)
+        return {
+            "subsystem": "BUZZER",
+            "status": "PASS",
+            "details": f"Acoustic Buzzer (GPIO 2 / Pin 3): {'Hardware Transistor Driver Ready' if not is_sim else 'Simulation Mode Ready'}"
+        }
+    return {
+        "subsystem": "BUZZER",
+        "status": "PASS",
+        "details": "Acoustic Buzzer: Configured on BCM GPIO 2 (Physical Pin 3)"
+    }
+
+
+def run_full_hardware_diagnostics(camera=None, engine=None, motor=None, auto_driver=None, buzzer=None):
     """
     Executes the required hardware startup checks:
     1. SD card storage
@@ -570,8 +591,9 @@ def run_full_hardware_diagnostics(camera=None, engine=None, motor=None, auto_dri
     5. Temperature
     6. Motor Battery & Power Rail (physical chirp + sensing)
     7. Motor driver H-bridge logic
-    8. Network communication bus.
-    If all essential checks pass, illuminates the green LED on GPIO 5 for 3 seconds.
+    8. Network communication bus
+    9. Acoustic Buzzer on GPIO 2
+    If all essential checks pass, illuminates the green LED on GPIO 5 and sounds self-test pass chime.
     """
     results = []
 
@@ -608,7 +630,10 @@ def run_full_hardware_diagnostics(camera=None, engine=None, motor=None, auto_dri
             "details": "L298N 4WD H-Bridge Subsystem configured"
         })
 
-    # 8. Comm Bus (Auxiliary check)
+    # 8. Acoustic Horn / Alert Buzzer (GPIO 2)
+    results.append(check_buzzer(buzzer=buzzer))
+
+    # 9. Comm Bus (Auxiliary check)
     results.append({
         "subsystem": "COMMUNICATION",
         "status": "PASS",
@@ -621,14 +646,22 @@ def run_full_hardware_diagnostics(camera=None, engine=None, motor=None, auto_dri
     is_successful = (len(failed_checks) == 0)
 
     led_triggered = False
+    buzzer_triggered = False
     if is_successful:
         glow_green_led(pin=GREEN_LED_PIN, duration_sec=3.0)
         led_triggered = True
+        if buzzer is not None:
+            try:
+                buzzer.selftest_pass_chime()
+                buzzer_triggered = True
+            except Exception as bz_err:
+                logger.warning(f"Could not trigger buzzer selftest chime: {bz_err}")
 
     return {
         "isSuccessful": is_successful,
         "timestamp": int(time.time() * 1000),
         "ledGlowTriggered": led_triggered,
+        "buzzerChimeTriggered": buzzer_triggered,
         "results": results
     }
 

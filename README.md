@@ -16,12 +16,12 @@ Project Lumina operates as a **100% On-Device Edge Cyber-Physical System**:
 +----------------------------------------------------------------------------------------+
 |                             EDGE VEHICLE (Raspberry Pi 4B)                             |
 |                                                                                        |
-|  +---------------------+        +--------------------+        +---------------------+  |
-|  |    Pi Camera V2     |        |   HC-SR04 Sensor   |        |   Green Status LED  |  |
-|  | (1080p @ 30 FPS)    |        | (50Hz Safety Loop) |        | (Pin 29 / GPIO 5)   |  |
-|  +----------+----------+        +---------+----------+        +----------+----------+  |
-|             |                             |                              |             |
-|             v                             v                              v             |
+|  +---------------------+   +--------------------+   +-------------------+   +--------------------+  |
+|  |    Pi Camera V2     |   |   HC-SR04 Sensor   |   |  Green Status LED |   |   Acoustic Buzzer  |  |
+|  | (1080p @ 30 FPS)    |   | (50Hz Safety Loop) |   | (Pin 29 / GPIO 5) |   | (Pin 3 / GPIO 2)   |  |
+|  +----------+----------+   +---------+----------+   +---------+---------+   +---------+----------+  |
+|             |                        |                        |                       |             |
+|             v                        v                        v                       v             |
 |  +----------------------------------------------------------------------------------+  |
 |  |                 On-Device Perception Core & Web Server (app.py)                   |  |
 |  | - Direct YOLOv8n-Seg CPU Inference (~85ms latency)                                |  |
@@ -355,6 +355,18 @@ For full documentation on the physical edge car architecture, see [AUTONOMOUS_HA
 - **Phone GNSS Location Injection (`DeviceGpsService`)**: Integrates real mobile device GPS via `geolocator`. Injects real-world street latitude and longitude into telemetry breadcrumbs and pothole observations, solving the lack of onboard car GPS hardware.
 - **Official PDF Road Inspection Survey (`TripPdfReportService`)**: Generates print/share-ready vector PDF survey documents with road quality scoring (Grade A/B/C), mission summary statistics, itemized hazard inventory table, and maintenance recommendations.
 - **Cardboard Track & Live Motor Trim Calibration (`/api/v1/vehicle/calibration`)**: Added live tuning sliders in the Settings screen for Left/Right motor power trim (0.70x to 1.30x), autonomous cruise speed (40% to 100%), and pothole detection confidence threshold (15% to 65%), along with a 1.2s kickstart straight drive test button to eliminate drift on low-friction cardboard surfaces.
+
+### 8.14 Active Acoustic Signaling & Tactical Horn Engine (`buzzer_controller.py`)
+- **NPN Transistor Driver on GPIO 2 (Pin 3)**: Low-side NPN driver switching a 5V active buzzer. Explicitly initializes `GPIO.setup(2, GPIO.OUT, initial=GPIO.LOW)` to prevent spurious humming caused by the I2C1 physical pull-up on GPIO 2.
+- **Non-Blocking Acoustic Engine**: Thread-safe background daemon worker thread (`BuzzerAudioThread`) and task queue ensures zero frame drops in the real-time YOLOv8 15–20 FPS perception loop and zero motor control jitter.
+- **Intelligent Acoustic Signatures**:
+  - **Pothole Detected**: Distinctive double-chirp (80ms ON, 50ms OFF, 80ms ON) alerts driver the instant a road defect is cataloged.
+  - **Urgent Obstacle Warning**: 3 rapid warning bursts (90ms ON, 50ms OFF x 3) when front clearance drops below safety stopping threshold.
+  - **Tactical Horn**: Supports 250ms pulse or continuous hold-to-honk via `/api/v1/vehicle/horn` and `/api/v1/control` (`action: "horn"`).
+  - **System Startup Chime**: Ascending 3-tone arpeggio (60ms, 70ms, 120ms) confirming system readiness on server boot.
+  - **Self-Test Pass Chime**: Double confirmation chime synchronized with Green Status LED glow on GPIO 5.
+  - **Reverse Gear Beeper**: Automatic industrial warning beeper while vehicle backs up.
+- **Companion App Cockpit Integration**: Prominent tactile HORN buttons in `DriveScreen` top bar, `DriveManualView`, and `FullscreenDriveView` (both manual and autonomous modes) with haptic impact feedback and solar-lime glow, plus a `TEST BUZZER` button in `DiagnosticsScreen`.
 
 ### 8.3 Automated Verification & Soak Testing Suite
 Comprehensive automated testing is provided in `tests/`:

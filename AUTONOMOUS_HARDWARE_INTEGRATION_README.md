@@ -33,6 +33,7 @@ This subsystem elevates the LUMINA robotic vehicle from a teleoperated IoT vehic
 | **HC-SR04 Trigger** | Output | **GPIO 16** | Pin 36 | 15 µs high pulse | Front distance trigger |
 | **HC-SR04 Echo** | Input | **GPIO 26** | Pin 37 | Pulse duration $\propto$ distance (via voltage divider) | Front obstacle echo |
 | **Status Green LED** | Output | **GPIO 5** | Pin 29 | 3.3V active HIGH, current-limited via 330Ω | Pass indicator |
+| **Acoustic Horn & Warning Buzzer** | Transistor Driver Output | **GPIO 2** | Pin 3 | NPN Low-Side Switch (Collector to Buzzer -ve, Base to GPIO 2 via 1kΩ) | Pothole alert, urgent collision sonar alarm, manual horn |
 | **Left Motors (IN1)** | Output | **GPIO 23** | Pin 16 | L298N Channel B (Physical Rear Right) | Direction Forward (Towards Camera) |
 | **Left Motors (IN2)** | Output | **GPIO 22** | Pin 15 | L298N Channel B (Physical Rear Right) | Direction Reverse (Away from Camera) |
 | **Left Speed (ENA)** | Hardware PWM | **GPIO 12** | Pin 32 | PWM Channel 0, 100 Hz duty cycle (0–100%) | Left Wheel Pair PWM Control |
@@ -1107,6 +1108,61 @@ wsl -d Ubuntu -u root bash -c "cd /mnt/e/lumina_ios && xtool dev build --sign --
 wsl -d Ubuntu -u root bash -c "source /root/pmd3_venv/bin/activate && pymobiledevice3 apps install /mnt/e/lumina_ios/xtool/LuminaCompanion.ipa"
 ```
 The application installs as `XTL-DMZX9N7265.com.lumina.companion` on the device and is immediately launchable with complete hardware control capabilities.
+
+---
+
+## 23. Subsystem: Acoustic Signaling, Collision Warning & Tactical Horn Engine (`buzzer_controller.py`)
+
+### 23.1 Circuit Driver Topology & Low-Side Transistor Switching
+The acoustic warning system uses an active buzzer controlled via a low-side NPN transistor driver (e.g. 2N2222 / BC547 / S8050) connected to Raspberry Pi BCM GPIO 2 (Physical Pin 3):
+
+```
++5V (Pin 2 / 4) ────────────► Buzzer (+) [Positive Rail]
+                                    │
+                              [Active Buzzer]
+                                    │
+Buzzer (-) ─────────────────► Transistor Collector (Left Leg)
+                                    │
+                      Transistor Base (Middle Leg) ◄─── Resistor (1kΩ) ◄─── GPIO 2 (Pin 3)
+                                    │
+Transistor Emitter (Right Leg) ─────► GND (Pin 6 / 9 / 14 / 20 / 25 / 30 / 34 / 39)
+```
+
+> [!NOTE]
+> **Boot Noise Mitigation on GPIO 2**: BCM GPIO 2 doubles as I2C1 SDA and has a physical 1.8kΩ pull-up resistor to 3.3V on the Raspberry Pi board. At Linux boot before software initialization, this pin can briefly float high. `BuzzerController.__init__` explicitly and immediately asserts `GPIO.setup(2, GPIO.OUT, initial=GPIO.LOW)` to prevent spurious humming or chirps at startup, and drives the pin LOW upon clean exit.
+
+### 23.2 Non-Blocking Multi-Threaded Audio Architecture
+Acoustic pattern generation runs on a dedicated background daemon thread (`BuzzerAudioThread`) fed by a thread-safe task queue. When an alert or horn is triggered, the method returns instantaneously (< 1ms), ensuring that:
+1. The **15–20 FPS YOLOv8 instance segmentation perception loop** is never stalled.
+2. Motor controller PWM commands and watchdog deadlines are strictly maintained without jitter.
+3. Urgent collision alarms immediately preempt and flush non-critical queued chirps.
+
+### 23.3 Acoustic Signatures & Sound Profiles
+| Event | Method | Acoustic Pattern | Profile Purpose |
+| :--- | :--- | :--- | :--- |
+| **Pothole Detected** | `pothole_alert()` | Double-chirp (80ms ON, 50ms OFF, 80ms ON) | Informs driver of logged road defect without screen glance |
+| **Urgent Obstacle** | `obstacle_alert()` | 3 fast bursts (90ms ON, 50ms OFF x 3) | Preempts queue; alerts of collision danger ($d \le 28\text{ cm}$) |
+| **Tactical Horn** | `horn_pulse(0.25)` | Solid 250ms honk (or continuous on hold) | Driver honk via companion app button or API |
+| **Startup Boot** | `startup_chime()` | Ascending 3-tone arpeggio (60ms, 70ms, 120ms) | Confirms models loaded and vehicle initialized |
+| **Self-Test Pass** | `selftest_pass_chime()` | Double confirmation chime (100ms, 220ms) | Synchronized with Green Status LED glow on GPIO 5 |
+| **Reverse Gear** | `reverse_beep()` | Industrial backup tone (150ms ON, 200ms OFF) | Sounds automatically while vehicle backs up |
+
+### 23.4 Edge Server Endpoints (`app.py`)
+* `POST /api/v1/vehicle/horn`:
+  ```json
+  { "state": "pulse", "duration": 0.25 }
+  // or { "state": "on" } / { "state": "off" }
+  ```
+* `POST /api/v1/control`: with payload `{ "action": "horn", "duration": 0.25 }`
+* `POST /api/v1/diagnostics/buzzer`: `{ "pattern": "selftest" | "pothole" | "obstacle" | "startup" | "reverse" }`
+* `GET /api/v1/vehicle/health`: includes `"buzzer": "OPERATIONAL"` in the subsystem status block.
+
+### 23.5 Mobile Companion App Integration (`E:\LUMINA`)
+* **Drive Screen Top Bar**: Quick tactile HORN button right next to the Drive Mode selector.
+* **Manual D-Pad Controller Card**: Compact HORN button supporting tap (250ms pulse) and hold-to-honk.
+* **Fullscreen Gaming HUD**: Overlaid tactile HORN button in both Autonomous and Manual modes with visual solar-lime glow and haptic vibration feedback.
+* **Diagnostics Screen**: Dedicated `TEST BUZZER` button for 1-tap acoustic hardware verification.
+
 
 
 
