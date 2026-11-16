@@ -1013,27 +1013,71 @@ Following the principles of `untangle-codebase` from `caldoai/skills`, the entir
 
 ---
 
-## 21. Companion Ecosystem: Real Slippy Cartography, Persistent Mission Telemetry, and Cockpit Unblocking
+## 22. Native iOS & iPadOS Companion App Architecture (`E:\lumina_ios`)
 
-### 21.1 Real Road Cartography & Slippy Map Engine (`RealMapTileView`)
-- **CartoDB Dark Matter & OpenStreetMap Raster Tiles**: Replaced placeholder mock vector grids with a true Web Mercator tile renderer (`https://cartodb-basemaps-a.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png`).
-- **Interactive Multi-Touch Controls**: Smooth panning with inertia, zoom levels 12x through 18x, GPS vehicle follow lock, and map style switcher (Dark Matter, Standard OSM, and Zero-Bandwidth Offline Radar Grid).
-- **Dynamic Overlays**:
-  - Live vehicle marker with pulsing solar lime radar ring, directional heading needle, and speed badge.
-  - Glowing neon route polyline tracing real GPS coordinates recorded by the vehicle.
-  - Severity-coded road hazard pins (Mild: Amber, Moderate: Warm Copper, Severe: Coral Red) with tap-to-inspect bottom sheet modal showing depth estimate, confidence, coordinates, and high-res camera snapshots.
+### 22.1 Overview & Physical Target
+A ground-up, high-performance native Swift 6 and SwiftUI companion application has been engineered in `E:\lumina_ios` for physical Apple iPad and iPhone devices (targeted to `iPad15,7`, arm64e, iPadOS 18+). It delivers complete feature parity with the production Flutter mobile companion app while capitalizing on native iOS graphics performance, low-latency URLSession networking, hardware haptics, and iPad-first ergonomics.
 
-### 21.2 Real Trip Session Tracking & Persistent Storage (`LocalStorageDataSource`)
-- **100% Persistent Storage via SharedPreferences**: Trips, breadcrumb route points, and pothole observations are serialized to JSON and persisted locally (`lumina_trips_archive_v2` and `lumina_potholes_archive_v2`). Data persists across app restarts and power cycles.
-- **Removed Static Seed Placeholders**: Eliminated hardcoded placeholder trips; the companion app operates exclusively on genuine recorded missions with a clean initial state and trip deletion/clearing controls.
-- **Trip Telemetry Summary & GIS Export**: Real duration timers, wheel odometer distance, average/peak speed, battery usage, and multi-format export (JSON telemetry log and standard GeoJSON for QGIS / Google Earth).
+### 22.2 Core Architectural Subsystems
+```
+Sources/LuminaCompanion/
+├── App/
+│   └── LuminaApp.swift                     # Master State Coordinator & 4-Stage Flow Transition
+├── Theme/
+│   ├── LuminaPalette.swift                 # Midnight Marine (#071920), Deep Ink, Solar Lime, Warm Coral
+│   └── LuminaBrandSymbol.swift             # Vector Canvas: L + converging lane ray + point of light
+├── Models/
+│   ├── DriveCommand.swift                  # Throttle, steering (-1.0..+1.0), timestamp, sequence
+│   ├── Telemetry.swift                     # Full telemetry model (speed, distance, temperatures, CPU, FPS)
+│   ├── PotholeObservation.swift            # Severity enum (MILD, MODERATE, SEVERE), depth, snapshot URL
+│   ├── Trip.swift                          # Trip session, GPS route breadcrumbs, battery accounting
+│   ├── DiagnosticRun.swift                 # 8 subsystem checks, pass/fail/warn, physical troubleshooting
+│   ├── VehicleState.swift                  # Connection states, drive modes, operating states
+│   └── VehicleHealth.swift                 # Subsystem matrix, thermal monitors with safety ceilings
+├── Services/
+│   ├── LuminaAppState.swift                # Central @MainActor ObservableObject application state
+│   ├── VehicleService.swift                # Production URLSession REST client for Raspberry Pi 4B
+│   ├── LocalDataStore.swift                # Persistent storage for trips, potholes, diagnostics, settings
+│   ├── SimulatorService.swift              # 100% offline vehicle simulator for companion testing
+│   └── MJPEGStreamer.swift                 # High-speed asynchronous SOI/EOI JPEG stream parser
+└── Views/
+    ├── Splash/                             # Animated pulsing brand symbol & preflight checks
+    ├── Connection/                         # Host endpoint entry, ping latency tester, auto-scan
+    ├── SelfTest/                           # 8 subsystem checks, pulse LED (GPIO 5), pulse motors, pinouts
+    ├── Cockpit/                            # Minimal top bar (mode pill, link status, E-Stop) & bottom tabs
+    ├── Drive/                              # MJPEG stream, HUD, D-Pad, joystick, keyboard, alert popups
+    ├── Map/                                # Dark Marine Cartography Canvas, GPS cone, hazard pins
+    ├── Potholes/                           # Inspection modal, AI bounding box, depth, JSON export
+    ├── Trips/                              # Historical session archives, speed profile chart, energy breakdown
+    ├── Vehicle/                            # Subsystem matrix, thermal monitors, deep diagnostics
+    └── Settings/                           # Speed governor, headlights, resolution, sensitivity, simulator
+```
 
-### 21.3 Cockpit Safety Unblocking & Stream Stability
-- **Top HUD Non-Blocking Alert Banner**: Relocated pothole detection alerts from the bottom (`bottom: 16`) to the top HUD (`top: 52` / `top: 48`), completely unblocking steering and throttle buttons (D-Pad, Analog Joystick, WASD) so operators maintain 100% control during hazard encounters.
-- **5-Second Auto-Dismiss Timer**: Pothole notifications automatically fade after 5 seconds, preventing HUD clutter without requiring operator intervention while steering.
-- **Orientation Lag & Freeze Elimination**:
-  - Fast windowed byte-scanning algorithm for MJPEG stream chunk listener reduces main isolate CPU usage by 95% and eliminates $O(N^2)$ memory copying.
-  - Decoupled static frame cache ensures instantaneous screen orientation transitions without stream drops, blackouts, or socket contention.
+### 22.3 Edge Vehicle Communication Protocol
+The iOS companion links directly to the Raspberry Pi 4B Flask server over local Wi-Fi:
+* `GET /api/v1/vehicle/health`: High-speed pre-flight health probe.
+* `GET /api/v1/telemetry`: 400ms (2.5 Hz) non-blocking sensor and state poll.
+* `POST /api/v1/control`: Zero-lag motion command transmission (`forward`, `backward`, `left`, `right`, `stop`).
+* `POST /api/v1/control/override`: Clearance of obstacle brake interlocks.
+* `POST /api/v1/vehicle/mode`: Seamless switching between `manual` teleoperation and `autonomous` closed-loop navigation.
+* `POST /api/v1/vehicle/start` & `/stop`: Session cruise engagement and termination.
+* `POST /api/v1/emergency_stop` & `/emergency_release`: Hardware deadline interlock trigger.
+* `POST /api/v1/diagnostics/run`: Comprehensive 8-point physical subsystem audit.
+* `POST /api/v1/diagnostics/led/test`: Pulse physical Green Status LED on GPIO 5 for 3.0s.
+* `POST /api/v1/diagnostics/motor/test`: Calibrated 1.0s forward drive pulse to verify L298N H-bridge.
+* `GET /video_feed` or `/clean_feed`: Asynchronous MJPEG stream decoding directly into native `UIImage`.
+
+### 22.4 Build, Code Signing & Device Installation
+The project builds via the cross-compilation Darwin SDK on Ubuntu WSL and signs with the Apple Developer ID (`lisajisaheb@icloud.com`, Team `DMZX9N7265`):
+```bash
+# 1. Compile, codesign and package the IPA:
+wsl -d Ubuntu -u root bash -c "cd /mnt/e/lumina_ios && xtool dev build --sign --ipa"
+
+# 2. Deploy directly to USB-connected iPad (via pymobiledevice3):
+wsl -d Ubuntu -u root bash -c "source /root/pmd3_venv/bin/activate && pymobiledevice3 apps install /mnt/e/lumina_ios/xtool/LuminaCompanion.ipa"
+```
+The application installs as `XTL-DMZX9N7265.com.lumina.companion` on the device and is immediately launchable with complete hardware control capabilities.
+
 
 
 

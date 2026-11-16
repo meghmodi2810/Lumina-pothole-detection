@@ -311,10 +311,11 @@ For full documentation on the physical edge car architecture, see [AUTONOMOUS_HA
 - **Interactive Diagnostic Troubleshooting Guides**: Replaces cryptic error codes with human-readable fault summaries and numbered step-by-step physical troubleshooting instructions (wiring pins, power checks, camera ribbon orientation, and terminal test commands) for every sensor and edge subsystem.
 - **Mobile & Web Universal Parity**: The Flutter codebase compiles cleanly and identically for native Android/iOS mobile devices and Web desktop/tablet browsers with responsive layouts (28/28 automated tests passing).
 
-### 8.6 Native Swift/SwiftUI iOS Companion (`E:\lumina_ios`) & `xtool` USB-C Deployment
-- **Dedicated Native Swift/SwiftUI App**: Built specifically for iPhone and iPad in `E:\lumina_ios` with low-latency MJPEG streaming, virtual analog thumbstick, telemetry HUD, and emergency interlocks.
-- **Cross-Platform xtool Engine**: Built, codesigned, and packaged directly from Windows via `xtool` in Ubuntu WSL using the Darwin Swift SDK (`arm64-apple-ios`).
-- **1-Click Hardware USB-C Passthrough**: Uses `usbipd-win` to bridge the physical iPhone/iPad over USB-C into WSL, with automated 1-click deployment via `DEPLOY_TO_DEVICE.bat` or `deploy_ipad.ps1`.
+### 8.6 Native Swift/SwiftUI iOS & iPadOS Companion (`E:\lumina_ios`) & `xtool` USB Deployment
+- **Dedicated Native Swift/SwiftUI App**: Built specifically for iPhone and iPad in `E:\lumina_ios` with 100% architectural parity with the Flutter app. Includes 4-stage operational flow (Splash -> Connection Manager -> Startup Self-Test -> Cockpit Scaffold), low-latency MJPEG video streaming (`MJPEGStreamer`), virtual analog thumbstick (`VirtualJoystickView`) & tactical 4-way D-Pad (`DirectionalPadView`), keyboard driving controls (`W/A/S/D`, arrows, spacebar), telemetry HUD dials, Dark Marine Cartography (`MapView`), and immediate hardware emergency stop interlocks.
+- **Cross-Platform xtool Engine**: Built, codesigned, and packaged directly from Windows via `xtool` in Ubuntu WSL using the Darwin Swift SDK (`arm64-apple-ios`) and Apple Developer ID provisioning (`lisajisaheb@icloud.com`).
+- **1-Click Hardware USB Installation**: Automated direct deployment to USB-connected iPads and iPhones via `pymobiledevice3 apps install`, allowing continuous on-device testing and zero-friction updates.
+- **Hardware Integration & Diagnostics**: Directly triggers and verifies car hardware: status LED pulse on GPIO 5, 4WD motor drive pulses, HC-SR04 ultrasonic echo monitoring, YOLOv8 inference telemetry, and deep diagnostics.
 
 ### 8.7 Fullscreen Landscape Gaming HUD & Dual-Orientation Universal Design
 - **Controlled IP Auto-Discovery**: Replaced abrupt auto-connecting with a confirmation modal (`LUMINA CAR DISCOVERED`) that populates the discovered IP in the textbox and lets the operator review latency and choose to connect or edit.
