@@ -67,8 +67,8 @@ class TestBuzzerController(unittest.TestCase):
         time.sleep(0.05)
         self.assertFalse(self.buzzer.is_active)
 
-    def test_chimes_and_reverse(self):
-        """Verifies startup chime, selftest pass chime, and reverse beeper."""
+    def test_chimes(self):
+        """Verifies startup chime and selftest pass chime."""
         self.buzzer.startup_chime()
         time.sleep(0.35)
         self.assertEqual(self.buzzer.last_pattern, "STARTUP_CHIME")
@@ -76,10 +76,6 @@ class TestBuzzerController(unittest.TestCase):
         self.buzzer.selftest_pass_chime()
         time.sleep(0.45)
         self.assertEqual(self.buzzer.last_pattern, "SELFTEST_PASS")
-
-        self.buzzer.reverse_beep()
-        time.sleep(0.45)
-        self.assertEqual(self.buzzer.last_pattern, "REVERSE_BEEP")
 
 
 if __name__ == "__main__":

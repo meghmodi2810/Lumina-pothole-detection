@@ -1404,8 +1404,6 @@ def test_buzzer_endpoint():
         buzzer.obstacle_alert()
     elif pattern == "startup":
         buzzer.startup_chime()
-    elif pattern == "reverse":
-        buzzer.reverse_beep()
     elif pattern == "horn":
         buzzer.horn_pulse(0.25)
     else:

@@ -415,11 +415,6 @@ class AutonomousDriver:
                     if current_dist < self.backoff_dist_cm:
                         logger.info(f"[Proximity Close: {current_dist:.1f} cm] Reversing {self.reverse_duration}s for turn clearance...")
                         self.state = AutonomousState.BACKING_OFF
-                        if self.buzzer:
-                            try:
-                                self.buzzer.reverse_beep()
-                            except Exception:
-                                pass
                         self.motor.backward(self.reverse_speed)
                         time.sleep(self.reverse_duration)
                         self.motor.stop()

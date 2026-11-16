@@ -1145,7 +1145,6 @@ Acoustic pattern generation runs on a dedicated background daemon thread (`Buzze
 | **Tactical Horn** | `horn_pulse(0.25)` | Solid 250ms honk (or continuous on hold) | Driver honk via companion app button or API |
 | **Startup Boot** | `startup_chime()` | Ascending 3-tone arpeggio (60ms, 70ms, 120ms) | Confirms models loaded and vehicle initialized |
 | **Self-Test Pass** | `selftest_pass_chime()` | Double confirmation chime (100ms, 220ms) | Synchronized with Green Status LED glow on GPIO 5 |
-| **Reverse Gear** | `reverse_beep()` | Industrial backup tone (150ms ON, 200ms OFF) | Sounds automatically while vehicle backs up |
 
 ### 23.4 Edge Server Endpoints (`app.py`)
 * `POST /api/v1/vehicle/horn`:
@@ -1154,7 +1153,7 @@ Acoustic pattern generation runs on a dedicated background daemon thread (`Buzze
   // or { "state": "on" } / { "state": "off" }
   ```
 * `POST /api/v1/control`: with payload `{ "action": "horn", "duration": 0.25 }`
-* `POST /api/v1/diagnostics/buzzer`: `{ "pattern": "selftest" | "pothole" | "obstacle" | "startup" | "reverse" }`
+* `POST /api/v1/diagnostics/buzzer`: `{ "pattern": "selftest" | "pothole" | "obstacle" | "startup" }`
 * `GET /api/v1/vehicle/health`: includes `"buzzer": "OPERATIONAL"` in the subsystem status block.
 
 ### 23.5 Mobile Companion App Integration (`E:\LUMINA`)

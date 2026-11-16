@@ -14,7 +14,6 @@ Non-blocking multi-threaded acoustic alerts:
   3. Manual Horn: Tactical driver honk (continuous while held or 250ms pulse).
   4. Startup Boot Chime: Ascending 3-tone ready arpeggio.
   5. Self-Test Pass Chime: Double confirmation chime synced with Green Status LED.
-  6. Reverse Backup Beeper: Pulsed backup warning tone while vehicle reverses.
 """
 
 import os
@@ -289,15 +288,6 @@ class BuzzerController:
         self._enqueue_pattern(
             "SELFTEST_PASS",
             [(0.10, 0.07), (0.22, 0.0)]
-        )
-
-    def reverse_beep(self):
-        """
-        Classic industrial vehicle reverse gear warning beep (150ms ON, 200ms OFF).
-        """
-        self._enqueue_pattern(
-            "REVERSE_BEEP",
-            [(0.15, 0.20)]
         )
 
     def beep(self, duration: float = 0.15):

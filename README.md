@@ -365,7 +365,6 @@ For full documentation on the physical edge car architecture, see [AUTONOMOUS_HA
   - **Tactical Horn**: Supports 250ms pulse or continuous hold-to-honk via `/api/v1/vehicle/horn` and `/api/v1/control` (`action: "horn"`).
   - **System Startup Chime**: Ascending 3-tone arpeggio (60ms, 70ms, 120ms) confirming system readiness on server boot.
   - **Self-Test Pass Chime**: Double confirmation chime synchronized with Green Status LED glow on GPIO 5.
-  - **Reverse Gear Beeper**: Automatic industrial warning beeper while vehicle backs up.
 - **Companion App Cockpit Integration**: Prominent tactile HORN buttons in `DriveScreen` top bar, `DriveManualView`, and `FullscreenDriveView` (both manual and autonomous modes) with haptic impact feedback and solar-lime glow, plus a `TEST BUZZER` button in `DiagnosticsScreen`.
 
 ### 8.3 Automated Verification & Soak Testing Suite
