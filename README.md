@@ -389,6 +389,15 @@ For full documentation on the physical edge car architecture, see [AUTONOMOUS_HA
   - `TripsScreen`: Made the empty state placeholder scrollable, resolving a 221px vertical overflow on landscape screens.
 - **Comprehensive Orientation Test Coverage**: Automated test suite (`orientation_switch_test.dart`) verifying seamless orientation switching across all five app tabs and multiple device screen resolutions ($640\times 320$, $740\times 360$, $780\times 360$).
 
+### 8.17 Zero-Tolerance Responsive Geometry & Multi-Resolution Test Suite
+- **Universal Pixel Overflow Elimination**: Audited and refactored every screen, HUD overlay, and modal dialog across the Flutter companion app (`E:\LUMINA`), eliminating all `RenderFlex overflowed` exceptions across all smartphone form factors:
+  - Replaced rigid rows with responsive `Wrap` widgets in `trips_screen.dart` and `trip_detail_screen.dart`.
+  - Replaced illegal `Spacer()` instances inside scroll views with fixed-height `SizedBox` spacers in `offline_state_screen.dart` and `synchronization_screen.dart`.
+  - Applied `Expanded(child: Text(..., overflow: TextOverflow.ellipsis))` and `Flexible` text truncation across all property tables and header titles (`vehicle_health_screen.dart`, `diagnostics_screen.dart`, `pothole_detail_screen.dart`, `vehicle_connection_screen.dart`).
+  - Constrained all tactile button contents in `directional_pad.dart`, `telemetry_rail.dart`, and `drive_screen.dart` using `FittedBox(fit: BoxFit.scaleDown)` to maintain structural integrity under high accessibility text scaling ($1.2\times$).
+  - Added dynamic viewport-clamped `topPadding` and `bottomPadding` in `RealMapTileView` and `MapScreen` so cartography controls never overlap bottom sheets or become obscured behind headers.
+- **Automated Multi-Resolution Audit Suite (`pixel_overflow_audit_test.dart`)**: 19 comprehensive tests validating zero layout exceptions across 6 target resolutions ($320\times 568$, $360\times 640$, $390\times 844$, $640\times 320$, $740\times 360$, $844\times 390$) and $1.2\times$ text scaling. Full suite passing with 80/80 green tests.
+
 ### 8.3 Automated Verification & Soak Testing Suite
 Comprehensive automated testing is provided in `tests/`:
 - `python tests/test_physical_hardware.py`: Runs 7/7 physical sensor, bus, and GPIO diagnostics on the Pi.

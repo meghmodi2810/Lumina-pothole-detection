@@ -1395,6 +1395,54 @@ To resolve stream interruption during rotation, `_CameraStreamViewState` was re-
 5. **`TripsScreen` Empty State**:
    - Converted the unconstrained placeholder column into a `SingleChildScrollView(physics: BouncingScrollPhysics())`, resolving the $221\text{px}$ bottom overflow on landscape viewports.
 
+---
+
+## 28. Comprehensive Zero-Tolerance Pixel Overflow Architecture & Multi-Resolution Audit
+
+### 28.1 Overview & Problem Statement
+During operational field tests and orientation conversions, users reported multiple instances of `RenderFlex overflowed by ... pixels` across both compact smartphones ($320\text{px}$ width) and landscape viewports ($320\text{–}360\text{px}$ height). The issues stemmed from rigid `Row` layouts where child text strings and action buttons lacked flex constraints or `FittedBox` scaling, fixed-width elements (such as `140px` trailing sliders on settings tiles), and unconstrained `Column` widgets inside scroll views using `Spacer()`.
+
+### 28.2 Architectural Remedies Implemented Across Subsystems
+
+| Subsystem / View | File | Root Cause | Structural Remedy |
+| :--- | :--- | :--- | :--- |
+| **Startup Self-Test** | `startup_self_test_screen.dart` | Fixed outer column with nested unbounded `Expanded` list builders | Replaced outer `Column` with `SingleChildScrollView(physics: BouncingScrollPhysics())`, set `shrinkWrap: true, physics: NeverScrollableScrollPhysics()` on checklists |
+| **Vehicle Connection** | `vehicle_connection_screen.dart` | Rigid header row ('TARGET CARRIER' + badge); dialog buttons overflowing on 320px | Wrapped title in `Expanded(child: Text(..., overflow: TextOverflow.ellipsis))`, wrapped dialog content in `SingleChildScrollView`, wrapped action buttons in `FittedBox(fit: BoxFit.scaleDown)` |
+| **Connection Failure** | `connection_failure_screen.dart` | Vertical flex overflow on landscape | Wrapped body in `SingleChildScrollView(physics: BouncingScrollPhysics())` |
+| **Diagnostics View** | `diagnostics_screen.dart` | Title row and check message columns unconstrained | Wrapped AppBar title and detail columns in `Expanded` with text ellipsis |
+| **Vehicle Health** | `vehicle_health_screen.dart` | Header title column unconstrained; system integrity banner unconstrained; thermal card header row overflowing on narrow columns | Wrapped titles in `Expanded`, applied `FittedBox` to status badges, wrapped power stats in `FittedBox(fit: BoxFit.scaleDown)` |
+| **Settings / Config** | `settings_screen.dart` | Fixed-width sliders (`140px`) crowded out titles on 320px screens | Wrapped tile trailing controls in `FittedBox(fit: BoxFit.scaleDown)`, trimmed slider widths to 115px, added `maxLines` + `overflow: TextOverflow.ellipsis` |
+| **Trip Detail View** | `trip_detail_screen.dart` | Long autonomous/manual mode text in rigid `Row`; key-value rows unconstrained | Replaced rigid mode `Row` with responsive `Wrap`, wrapped `_buildRow` label in `Expanded` and value in `Flexible` with ellipsis |
+| **Pothole Detail** | `pothole_detail_screen.dart` | Hazard title and property table rows overflowing | Wrapped AppBar and card titles in `Expanded`, wrapped property row values in `Flexible` with right alignment |
+| **Road Cartography** | `real_map_tile_view.dart` & `map_screen.dart` | Map overlay buttons hidden beneath top header bar or bottom sheets; carousel card title unconstrained | Added dynamic `topPadding` and `bottomPadding` offsets clamped to viewport height; wrapped observation IDs in `Expanded` with ellipsis |
+| **Cockpit Navigation** | `cockpit_scaffold.dart` | 5-item bottom navigation bar item labels overflowing on 320px width ($<64\text{px}$ per tab) | Wrapped each nav tab's icon + text row in `FittedBox(fit: BoxFit.scaleDown)` |
+| **Drive Cockpit** | `drive_screen.dart` | Mode switcher and action cluster overlapping on 320px; 4 mini-telemetry items overflowing horizontal row by 24px | Wrapped Mode Switcher and Right Cluster in `Flexible(child: FittedBox(...))`, wrapped mini-telemetry row in `FittedBox(fit: BoxFit.scaleDown)` |
+| **Directional Pad** | `directional_pad.dart` | D-pad buttons overflowing vertically by 14px under 1.2x text scaling | Wrapped button contents in `FittedBox(fit: BoxFit.scaleDown)` inside fixed-height animated containers |
+| **Telemetry Rail** | `telemetry_rail.dart` | Speed and distance large typography ($36\text{px}$) overflowing $140\text{px}$ rail under 1.2x text scaling | Wrapped baseline rows in `FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft)` |
+| **Offline State** | `offline_state_screen.dart` | `Spacer()` inside `SingleChildScrollView` caused unbounded height assertion | Replaced `Spacer()` with `SizedBox(height: 24)`, wrapped reconnect button in `FittedBox` |
+| **Synchronization** | `synchronization_screen.dart` | `Spacer()` inside `SingleChildScrollView`; long ledger rows and progress button overflowing | Replaced `Spacer()` with `SizedBox(height: 24)`, wrapped ledger labels in `Expanded` with ellipsis, wrapped sync progress button in `FittedBox` |
+| **HUD Alerts & Dialogs** | `pothole_event_dialog.dart`, `obstacle_event_dialog.dart`, `temperature_warning_dialog.dart` | Multi-line text wrapping or button overflows on compact screens | Wrapped hazard headlines in `Expanded` with single-line constraint, wrapped action buttons in `FittedBox(fit: BoxFit.scaleDown)` |
+
+---
+
+### 28.3 Automated Multi-Resolution Test Suite Verification
+
+A dedicated multi-resolution audit suite (`test/pixel_overflow_audit_test.dart`) was engineered to systematically mount and pump every screen, HUD overlay, and modal dialog across standard and edge-case device viewports:
+
+* **Compact Smartphone Portrait**: $320 \times 568$ (e.g. iPhone SE 1st gen, small Android handsets)
+* **Standard Smartphone Portrait**: $360 \times 640$ (standard Android baseline)
+* **Modern Smartphone Portrait**: $390 \times 844$ (modern iOS & high-DPI Android)
+* **Ultra-Compact Smartphone Landscape**: $640 \times 320$
+* **Standard Smartphone Landscape**: $740 \times 360$
+* **Modern Smartphone Landscape**: $844 \times 390$
+* **Accessibility Text Scale Factor**: $1.2\times$ linear text scaling
+
+```
+00:04 +19: All tests passed!
+Full Flutter Suite: 80 / 80 tests passing (0 failures, 0 rendering exceptions, 0 pixel overflows).
+```
+
+
 
 
 
