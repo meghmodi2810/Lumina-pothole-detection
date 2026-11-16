@@ -380,6 +380,15 @@ For full documentation on the physical edge car architecture, see [AUTONOMOUS_HA
   - 1-tap direct PDF report export on every trip card in the archive (`TripPdfReportService`).
   - Integrated `createDemoTrip` benchmark generator allowing immediate testing of survey reports and PDF printouts without driving.
 
+### 8.16 Landscape Orientation Stabilization & Stream Reconnection Architecture
+- **Camera Stream Persistence (`CameraStreamView`)**: Eliminated app freezing during physical phone rotation or landscape mode conversion. Converted the MJPEG receiver to use a shared broadcast connection manager (`StreamController<Uint8List>.broadcast()`). Rotating the device preserves the active TCP stream at 30 FPS with zero socket thrashing, zero broken pipes on the Flask server, and zero reconnect blackout.
+- **Zero-Overflow Responsive Geometry**:
+  - `CockpitScaffold`: Scaled the right-aligned status cluster using `Flexible` and `FittedBox` to prevent horizontal overflow on landscape smartphone viewports.
+  - `DriveScreen`: Clustered toolbar controls and wrapped mission recording telemetry in flexible text wrappers to prevent sub-pixel overflows during orientation transitions.
+  - `DriveManualView`: Constrained the D-pad header row inside flex-3 columns with responsive scaling.
+  - `TripsScreen`: Made the empty state placeholder scrollable, resolving a 221px vertical overflow on landscape screens.
+- **Comprehensive Orientation Test Coverage**: Automated test suite (`orientation_switch_test.dart`) verifying seamless orientation switching across all five app tabs and multiple device screen resolutions ($640\times 320$, $740\times 360$, $780\times 360$).
+
 ### 8.3 Automated Verification & Soak Testing Suite
 Comprehensive automated testing is provided in `tests/`:
 - `python tests/test_physical_hardware.py`: Runs 7/7 physical sensor, bus, and GPIO diagnostics on the Pi.

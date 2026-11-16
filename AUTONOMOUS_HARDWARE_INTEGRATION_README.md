@@ -1351,6 +1351,50 @@ Upgraded `TripPdfReportService` to generate comprehensive, professional civil en
   - **1-Tap Direct PDF Button**: Every trip card in the archive features a direct `[ 📄 PDF ]` action that compiles and prints an official A4 road inspection report (`TripPdfReportService`) without needing to open sub-menus.
   - **Demo Mission Generator (`createDemoTrip`)**: Built-in 1-tap benchmark generator that creates a complete mission with route waypoints, sample potholes, and high-resolution images so users can test reports and PDF output immediately without driving.
 
+---
+
+## 27. Landscape Orientation Stabilization & Camera Stream Architecture
+
+### 27.1 Root Cause of Landscape Conversion Freeze
+When converting the companion mobile application from Portrait to Landscape (physical device rotation or entering Fullscreen gaming mode), the application previously experienced rendering lockups and unresponsive interfaces ("getting stuck") due to two intersecting factors:
+
+1. **HTTP MJPEG Stream Deadlock & Socket Thrashing**:
+   - In portrait mode, `CameraStreamView` mounted inside `_buildPortraitCockpit()`.
+   - When rotated to landscape, Flutter unmounted the portrait subtree and mounted `DriveManualView` / `DriveAutonomousView`, which created a second, unlinked `CameraStreamView`.
+   - The unmounted instance disposed its `http.Client` and cancelled its socket. Concurrently, the newly mounted instance called `http.post('/api/v1/camera/start')` and opened a new persistent GET request to `/video_feed`.
+   - On the edge server (`app.py`), the previous generator thread encountered `BrokenPipeError` on the severed socket, momentarily locking `camera.lock` while the new client timed out or hung the UI render queue.
+2. **Compound RenderFlex Overflows in Constrained Landscape Dimensions**:
+   - In standard landscape smartphone viewports ($320\text{–}360\text{px}$ height), the vertical space available to `Scaffold.body` is only $\sim 220\text{–}260\text{px}$ after accounting for the top bar and bottom navigation bar.
+   - When a stream disconnect occurred, `CameraStreamView._buildCameraOfflineView()` attempted to render an unconstrained column ($178\text{px}$), overflowing by $12\text{–}52\text{px}$.
+   - Simultaneously, `cockpit_scaffold.dart`'s top action row in landscape overflowed by $20\text{–}33\text{px}$ on widths $\le 740\text{px}$.
+   - `drive_screen.dart`'s active mission strip and `drive_manual_view.dart`'s D-pad header overflowed horizontally.
+   - `trips_screen.dart`'s empty state overflowed vertically by $221\text{px}$ in landscape.
+   - Flutter's rendering pipeline caught these simultaneous layout assertions, freezing the UI thread.
+
+---
+
+### 27.2 Static Shared Stream Persistence
+To resolve stream interruption during rotation, `_CameraStreamViewState` was re-engineered with an intelligent **Shared Broadcast Connection Manager**:
+* **Singleton Active Stream**: Reuses a single shared `http.Client` and `StreamSubscription` via `StreamController<Uint8List>.broadcast()`.
+* **Zero Disconnect on Rotation**: When orientation switches, the disposing widget decrements active viewers and starts a 3000ms debounce timer. The newly mounted landscape widget increments active viewers in the subsequent frame and cancels the timer. The underlying TCP socket to Raspberry Pi `/video_feed` remains uninterrupted at 30 FPS.
+* **Instant Static Frame Cache**: `_cachedLastFrame` immediately paints the last received JPEG frame during layout reparenting, achieving true zero-blackout orientation transitions.
+* **Intelligent Auto-Teardown**: Only when all camera views remain unmounted for $>3000\text{ms}$ (e.g. navigating to Settings) is the connection gracefully closed to conserve network and CPU resources.
+
+---
+
+### 27.3 Responsive Layout & Zero-Overflow Geometry
+1. **`CockpitScaffold` Top Bar**:
+   - Wrapped the right-aligned status cluster (Network Indicator, STOP, Settings, Disconnect) in `Flexible` + `FittedBox(fit: BoxFit.scaleDown)` to ensure zero overflow on any smartphone screen width down to $640\text{px}$.
+2. **`DriveScreen` Cockpit Toolbar & Mission Strip**:
+   - Clustered Horn and Autonomy Status in a scalable `FittedBox`.
+   - Wrapped the recording telemetry text in `Expanded(child: Text(..., overflow: TextOverflow.ellipsis))` so active mission stats never push the Finish Trip button offscreen.
+3. **`DriveManualView` Controller Header**:
+   - Scaled the `[D-PAD] [HORN] [TEST SNAP]` row with `Flexible` and `FittedBox` to prevent clipping inside flex-3 columns.
+4. **`CameraStreamView` Offline View**:
+   - Wrapped the reconnecting standby layout in `SingleChildScrollView` + `FittedBox`, preventing vertical overflow even on viewports under $120\text{px}$ height.
+5. **`TripsScreen` Empty State**:
+   - Converted the unconstrained placeholder column into a `SingleChildScrollView(physics: BouncingScrollPhysics())`, resolving the $221\text{px}$ bottom overflow on landscape viewports.
+
 
 
 
