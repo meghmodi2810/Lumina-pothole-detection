@@ -49,6 +49,10 @@ class BuzzerController:
 
     def __init__(self, pin=DEFAULT_BUZZER_PIN, is_simulation=None):
         self.pin = pin
+        # Dual-Pin Actuation: Simultaneously drives both GPIO 2 (Physical Pin 3)
+        # and GPIO 21 (Physical Pin 40). Whichever pin the user plugs their wire into,
+        # it works instantly with zero configuration!
+        self.active_pins = [2, 21] if self.pin in (2, 21) else [self.pin]
         self.is_simulation = is_simulation if is_simulation is not None else (not GPIO_AVAILABLE)
         self.is_active = False
         self._lock = threading.RLock()
@@ -61,7 +65,7 @@ class BuzzerController:
         self.last_beep_time = 0.0
         self.last_pattern = "NONE"
 
-        # Initialize physical pin safely
+        # Initialize physical pins safely
         self._init_hardware_pin()
 
         # Ensure safe shutdown clamp when Python process terminates
@@ -75,47 +79,36 @@ class BuzzerController:
 
     def _init_hardware_pin(self):
         """
-        Initializes buzzer GPIO pin as OUTPUT and immediately forces LOW (0V).
-        CRITICAL FOR GPIO 2 (Physical Pin 3):
-        Pin 3 has a physical 1.8k pull-up resistor to 3.3V on the Raspberry Pi PCB.
-        We must aggressively assert OUTPUT LOW across all hardware layers to prevent
-        the transistor gate from saturating and screaming.
+        Initializes buzzer GPIO pins as OUTPUT and immediately forces LOW (0V).
+        Supports both GPIO 2 (Pin 3) and GPIO 21 (Pin 40).
         """
         if self.is_simulation:
-            logger.info(f"BuzzerController initialized in SIMULATION mode on virtual GPIO {self.pin}.")
+            logger.info(f"BuzzerController initialized in SIMULATION mode on virtual GPIO {self.pin} (Active: {self.active_pins}).")
             return
 
-        pin_num = 3 if self.pin == 2 else (40 if self.pin == 21 else self.pin)
+        for p in self.active_pins:
+            pin_num = 3 if p == 2 else (40 if p == 21 else p)
 
-        # 1. RPi.GPIO immediate clamp
-        if GPIO_AVAILABLE:
-            try:
-                GPIO.setup(self.pin, GPIO.OUT, initial=GPIO.LOW)
-                GPIO.output(self.pin, GPIO.LOW)
-                logger.info(f"Initialized Buzzer on BCM GPIO {self.pin} (Pin {pin_num}) with state LOW via RPi.GPIO.")
-            except Exception as e:
-                logger.warning(f"RPi.GPIO setup failed for buzzer on GPIO {self.pin}: {e}")
+            # 1. RPi.GPIO immediate clamp
+            if GPIO_AVAILABLE:
+                try:
+                    GPIO.setup(p, GPIO.OUT, initial=GPIO.LOW)
+                    GPIO.output(p, GPIO.LOW)
+                    logger.info(f"Initialized Buzzer on BCM GPIO {p} (Pin {pin_num}) with state LOW via RPi.GPIO.")
+                except Exception as e:
+                    logger.warning(f"RPi.GPIO setup failed for buzzer on GPIO {p}: {e}")
 
-        # 2. System-level CLI clamp (pinctrl for Bookworm / raspi-gpio for Bullseye)
-        try:
-            subprocess.run(["pinctrl", "set", str(self.pin), "op", "dl"], check=False, capture_output=True, timeout=0.3)
-        except Exception:
+            # 2. System-level CLI clamp (pinctrl for Bookworm / raspi-gpio for Bullseye)
             try:
-                subprocess.run(["raspi-gpio", "set", str(self.pin), "op", "dl"], check=False, capture_output=True, timeout=0.3)
+                subprocess.run(["pinctrl", "set", str(p), "op", "dl"], check=False, capture_output=True, timeout=0.3)
             except Exception:
-                pass
-
-        # 3. gpiozero clamp
-        try:
-            from gpiozero import OutputDevice
-            self._gz_device = OutputDevice(self.pin, active_high=True, initial_value=False)
-            self._gz_device.off()
-            logger.info(f"Initialized Buzzer on GPIO {self.pin} via gpiozero OutputDevice.")
-        except Exception:
-            self._gz_device = None
+                try:
+                    subprocess.run(["raspi-gpio", "set", str(p), "op", "dl"], check=False, capture_output=True, timeout=0.3)
+                except Exception:
+                    pass
 
     def _set_pin_state(self, high: bool):
-        """Low-level actuation of buzzer transistor gate with cascade fallback."""
+        """Low-level actuation of buzzer transistor gate with dual-pin support."""
         with self._lock:
             self.is_active = high
 
@@ -123,48 +116,37 @@ class BuzzerController:
             # High-fidelity simulated actuation
             return
 
-        # Tier 1: RPi.GPIO
-        if GPIO_AVAILABLE:
+        for p in self.active_pins:
+            # Tier 1: RPi.GPIO
+            if GPIO_AVAILABLE:
+                try:
+                    GPIO.output(p, GPIO.HIGH if high else GPIO.LOW)
+                    continue
+                except Exception:
+                    pass
+
+            # Tier 2: pinctrl CLI (Raspberry Pi OS 12 Bookworm)
             try:
-                GPIO.output(self.pin, GPIO.HIGH if high else GPIO.LOW)
-                return
+                val = "dh" if high else "dl"
+                subprocess.run(["pinctrl", "set", str(p), "op", val], check=False, capture_output=True, timeout=0.2)
+                continue
             except Exception:
                 pass
 
-        # Tier 2: gpiozero
-        if hasattr(self, "_gz_device") and self._gz_device is not None:
+            # Tier 3: raspi-gpio CLI (Bullseye)
             try:
-                if high:
-                    self._gz_device.on()
-                else:
-                    self._gz_device.off()
-                return
+                val = "1" if high else "0"
+                subprocess.run(["raspi-gpio", "set", str(p), "op", "dh" if high else "dl"], check=False, capture_output=True, timeout=0.2)
+                continue
             except Exception:
                 pass
 
-        # Tier 3: pinctrl CLI (Raspberry Pi OS 12 Bookworm)
-        try:
-            val = "dh" if high else "dl"
-            subprocess.run(["pinctrl", "set", str(self.pin), "op", val], check=False, capture_output=True, timeout=0.2)
-            return
-        except Exception:
-            pass
-
-        # Tier 4: raspi-gpio CLI (Bullseye)
-        try:
-            val = "1" if high else "0"
-            subprocess.run(["raspi-gpio", "set", str(self.pin), "op", "dh" if high else "dl"], check=False, capture_output=True, timeout=0.2)
-            return
-        except Exception:
-            pass
-
-        # Tier 5: gpioset (libgpiod)
-        try:
-            val = "1" if high else "0"
-            subprocess.run(["gpioset", "gpiochip0", f"{self.pin}={val}"], check=False, capture_output=True, timeout=0.2)
-            return
-        except Exception:
-            pass
+            # Tier 4: gpioset (libgpiod)
+            try:
+                val = "1" if high else "0"
+                subprocess.run(["gpioset", "gpiochip0", f"{p}={val}"], check=False, capture_output=True, timeout=0.2)
+            except Exception:
+                pass
 
     def _start_worker(self):
         """Starts the dedicated background daemon thread for acoustic pattern sequencing."""
@@ -337,9 +319,8 @@ class BuzzerController:
 
     def cleanup(self):
         """
-        Safely stops worker thread and ensures pin is driven LOW to prevent hum/noise.
-        CRITICAL: We do NOT release GPIO 2 to INPUT mode because the Raspberry Pi PCB
-        has a hardware 1.8k pull-up on Pin 3 that would immediately turn the buzzer back ON!
+        Safely stops worker thread and ensures pins are driven LOW to prevent hum/noise.
+        Locks both GPIO 2 and GPIO 21 to OUTPUT LOW (0V).
         """
         self._stop_event.set()
         try:
@@ -348,22 +329,23 @@ class BuzzerController:
             pass
         self._set_pin_state(False)
 
-        # Explicitly lock physical pin to OUTPUT LOW
-        if not self.is_simulation and GPIO_AVAILABLE:
-            try:
-                GPIO.setup(self.pin, GPIO.OUT, initial=GPIO.LOW)
-                GPIO.output(self.pin, GPIO.LOW)
-            except Exception:
-                pass
+        # Explicitly lock physical pins to OUTPUT LOW
+        for p in getattr(self, "active_pins", [self.pin]):
+            if not self.is_simulation and GPIO_AVAILABLE:
+                try:
+                    GPIO.setup(p, GPIO.OUT, initial=GPIO.LOW)
+                    GPIO.output(p, GPIO.LOW)
+                except Exception:
+                    pass
 
-        try:
-            subprocess.run(["pinctrl", "set", str(self.pin), "op", "dl"], check=False, capture_output=True, timeout=0.2)
-        except Exception:
             try:
-                subprocess.run(["raspi-gpio", "set", str(self.pin), "op", "dl"], check=False, capture_output=True, timeout=0.2)
+                subprocess.run(["pinctrl", "set", str(p), "op", "dl"], check=False, capture_output=True, timeout=0.2)
             except Exception:
-                pass
+                try:
+                    subprocess.run(["raspi-gpio", "set", str(p), "op", "dl"], check=False, capture_output=True, timeout=0.2)
+                except Exception:
+                    pass
 
         if self._worker_thread and self._worker_thread.is_alive():
             self._worker_thread.join(timeout=0.8)
-        logger.info(f"BuzzerController on GPIO {self.pin} safely stopped and pin locked to LOW (0V).")
+        logger.info(f"BuzzerController on GPIO {self.pin} safely stopped and pins {self.active_pins} locked to LOW (0V).")
