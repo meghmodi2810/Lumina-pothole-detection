@@ -20,7 +20,7 @@ logger = logging.getLogger("DiagnosticsEngine")
 
 # Hardware Pin Definitions (Lumina-01 Raspberry Pi 4B)
 GREEN_LED_PIN = 5          # Pin 29 (Active Status / Self-Test Pass)
-BUZZER_PIN = int(os.environ.get("LUMINA_BUZZER_PIN", 21))  # Pin 40 (Active Horn & Pothole Alert Buzzer - Default Pull-Down)
+BUZZER_PIN = int(os.environ.get("LUMINA_BUZZER_PIN", 2))  # Pin 3 (Active Horn & Pothole Alert Buzzer on BCM GPIO 2)
 ULTRASONIC_TRIG = 16       # Pin 36 (HC-SR04 Trigger)
 ULTRASONIC_ECHO = 26       # Pin 37 (HC-SR04 Echo)
 MOTOR_POWER_SENSE_PIN = 24 # Pin 18 (Optional 5V / Resistor Divider Battery Sense)

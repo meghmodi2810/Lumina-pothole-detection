@@ -18,7 +18,7 @@ Project Lumina operates as a **100% On-Device Edge Cyber-Physical System**:
 |                                                                                        |
 |  +---------------------+   +--------------------+   +-------------------+   +--------------------+  |
 |  |    Pi Camera V2     |   |   HC-SR04 Sensor   |   |  Green Status LED |   |   Acoustic Buzzer  |  |
-|  | (1080p @ 30 FPS)    |   | (50Hz Safety Loop) |   | (Pin 29 / GPIO 5) |   | (Pin 40 / GPIO 21)  |  |
+|  | (1080p @ 30 FPS)    |   | (50Hz Safety Loop) |   | (Pin 29 / GPIO 5) |   | (Pin 3 / GPIO 2)   |  |
 |  +----------+----------+   +---------+----------+   +---------+---------+   +---------+----------+  |
 |             |                        |                        |                       |             |
 |             v                        v                        v                       v             |
@@ -145,6 +145,9 @@ Project Lumina/
 │
 ├── app.py                       # Vision server, MJPEG streaming & FFmpeg H.264 engine
 ├── autonomous_driver.py         # Multi-state closed-loop autonomous driving engine
+├── buzzer_controller.py         # Multi-threaded acoustic horn & alert buzzer engine (GPIO 2 / Pin 3)
+├── fix_buzzer_boot_silence.py   # Bootloader clamp utility to permanently silence buzzer at power-on
+├── fix_buzzer_boot_silence.sh   # 1-step bash bootloader clamp runner for Raspberry Pi OS
 ├── diagnostics_engine.py        # Active hardware startup self-test & status LED engine
 ├── path_planner.py              # Avoidance arbitrator & dynamic AR trajectory renderer
 ├── pothole_engine.py            # Perception core: segmentation, box fusion, temporal tracking

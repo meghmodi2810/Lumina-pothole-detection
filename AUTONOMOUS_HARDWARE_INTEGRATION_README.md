@@ -33,7 +33,7 @@ This subsystem elevates the LUMINA robotic vehicle from a teleoperated IoT vehic
 | **HC-SR04 Trigger** | Output | **GPIO 16** | Pin 36 | 15 µs high pulse | Front distance trigger |
 | **HC-SR04 Echo** | Input | **GPIO 26** | Pin 37 | Pulse duration $\propto$ distance (via voltage divider) | Front obstacle echo |
 | **Status Green LED** | Output | **GPIO 5** | Pin 29 | 3.3V active HIGH, current-limited via 330Ω | Pass indicator |
-| **Acoustic Horn & Warning Buzzer** | Transistor Driver Output | **GPIO 21** | Pin 40 | NPN Low-Side Switch (Collector to Buzzer -ve, Base to GPIO 21 via 1kΩ) | Pothole alert, urgent collision sonar alarm, manual horn (Default PULL-DOWN at boot, avoids I2C hardware pull-up) |
+| **Acoustic Horn & Warning Buzzer** | Transistor Driver Output | **GPIO 2** | Pin 3 | NPN Low-Side Switch (Collector to Buzzer -ve, Base to GPIO 2 via 1kΩ) | Pothole alert, urgent collision sonar alarm, manual horn (Stabilized on GPIO 2 via VideoCore boot clamp `gpio=2=op,dl`) |
 | **Left Motors (IN1)** | Output | **GPIO 23** | Pin 16 | L298N Channel B (Physical Rear Right) | Direction Forward (Towards Camera) |
 | **Left Motors (IN2)** | Output | **GPIO 22** | Pin 15 | L298N Channel B (Physical Rear Right) | Direction Reverse (Away from Camera) |
 | **Left Speed (ENA)** | Hardware PWM | **GPIO 12** | Pin 32 | PWM Channel 0, 100 Hz duty cycle (0–100%) | Left Wheel Pair PWM Control |
@@ -1181,7 +1181,78 @@ Acoustic pattern generation runs on a dedicated background daemon thread (`Buzze
 
 ---
 
-## 24. Road Cartography Overhaul & Dynamic Trip Lifecycle System
+## 25. Buzzer Hardware Pin Preservation (GPIO 2 / Physical Pin 3) & Acoustic Pattern Specification
+
+### 25.1 User Hardware Wiring Retention
+The active buzzer is firmly wired to **BCM GPIO 2 (Physical Header Pin 3)** via an NPN transistor low-side driver circuit:
+* **RPi 5V (Pin 2 or 4)** $\rightarrow$ Buzzer Positive (`+`)
+* **Buzzer Negative (`-`)** $\rightarrow$ Transistor Collector (Left leg)
+* **Transistor Emitter (Right leg)** $\rightarrow$ Raspberry Pi Ground (`GND`, Pin 6, 9, 14, 20, 25, 30, 34, or 39)
+* **Transistor Base (Middle leg)** $\rightarrow$ Resistor ($1\text{k}\Omega$ to $4.7\text{k}\Omega$) $\rightarrow$ **Raspberry Pi BCM GPIO 2 (Physical Pin 3)**
+
+> [!IMPORTANT]
+> **No Pin Changes Required**: All solutions strictly preserve this physical wiring without altering any jumper cables or breadboard circuits.
+
+---
+
+### 25.2 Root Causes: Why Did It Buzz Continuously and Randomly?
+
+1. **Continuous Screaming / Buzzing at Power-On**:
+   * **Hardware Physics**: Physical Pin 3 (BCM GPIO 2) is the Raspberry Pi hardware **I2C1 SDA** line.
+   * On every Raspberry Pi board, **Pin 3 has a physical $1.8\text{ k}\Omega$ pull-up resistor connected to 3.3V permanently soldered to the PCB**.
+   * When power is plugged in, before Linux finishes booting and Python starts, Pin 3 defaults to high impedance input. The $1.8\text{ k}\Omega$ pull-up pulls the pin to 3.3V, continuously saturating the transistor base and forcing the buzzer to scream non-stop.
+   * Furthermore, `buzzer_controller.py` previously had a fallback default of pin 21. If run without environment overrides, it never configured GPIO 2 to `LOW`, leaving it screaming indefinitely.
+
+2. **Spurious / "Random" Buzzing While Parked**:
+   * In `app.py`, the perception loop previously evaluated `scaled_detections` and sounded `buzzer.pothole_alert()` every 2 seconds without verifying if the vehicle was in motion.
+   * If the car was sitting still on a desk, cardboard track, or carpet, low-confidence shadows or minor texture irregularities triggered `buzzer.pothole_alert()` (2 beeps) every 2.0 seconds.
+   * In addition, if Linux kernel I2C arm driver is active, periodic bus scans pulse Pin 3, causing transient micro-chirps.
+
+---
+
+### 25.3 Permanent Hardware & Software Solutions
+
+1. **Bootloader VideoCore Clamp (`/boot/firmware/config.txt`)**:
+   Adding the following directives to `/boot/firmware/config.txt` (or `/boot/config.txt`):
+   ```ini
+   # LUMINA BUZZER HARDWARE CLAMP (GPIO 2 / PIN 3)
+   gpio=2=op,dl
+   dtparam=i2c_arm=off
+   ```
+   * `gpio=2=op,dl`: Forces the GPU bootloader to assert GPIO 2 as an **OUTPUT LOW (0V)** within 100 milliseconds of power connection—silencing the buzzer immediately during boot before the OS kernel loads!
+   * `dtparam=i2c_arm=off`: Disables the I2C kernel driver so Pin 3 is dedicated exclusively to digital low-side buzzer switching.
+
+2. **Automated Fix Utilities (`fix_buzzer_boot_silence.py` and `fix_buzzer_boot_silence.sh`)**:
+   One-touch scripts added to the repository root. Run via SSH on the vehicle:
+   ```bash
+   sudo bash fix_buzzer_boot_silence.sh
+   # Or: sudo python3 fix_buzzer_boot_silence.py
+   ```
+   Instantly clamps live Pin 3 to LOW (0V) and appends bootloader directives automatically.
+
+3. **Motion-Aware Acoustic Gating in `app.py`**:
+   * Evaluates `is_vehicle_moving` (`is_drive_engaged`, `motor.is_driving`, or `auto_driver.is_active`).
+   * When actively driving: debounces at 2.0s with standard confidence threshold ($\ge 0.35$).
+   * When stationary/parked: debounces at 15.0s with high-confidence gating ($\ge 0.50$), completely eliminating spurious repeating chirps while parked.
+
+4. **Safety Pin Lock in `buzzer_controller.py`**:
+   * Sets `DEFAULT_BUZZER_PIN = 2`.
+   * Enforces `atexit.register(self.cleanup)`.
+   * Explicitly locks GPIO 2 to `OUTPUT LOW` (0V) on process exit, actively overriding standard `GPIO.cleanup()` to prevent the pin from reverting to an input that would let the $1.8\text{ k}\Omega$ pull-up re-trigger the buzzer.
+
+---
+
+### 25.4 Comprehensive Acoustic Signatures: Exact Beep Counts & Timings
+
+| Event / Scenario | Acoustic Pattern | Beep Count | Timing Breakdown | Trigger Condition |
+| :--- | :--- | :---: | :--- | :--- |
+| **Pothole Detected** | Double-Chirp | **2 beeps** | **80ms ON**, 50ms OFF, **80ms ON** (Total: 0.21s) | YOLO AI detects road defect ($\text{conf} \ge 0.35$) while vehicle is moving |
+| **Urgent Obstacle** | Rapid Warning Alarm | **3 beeps** | **90ms ON**, 50ms OFF, **90ms ON**, 50ms OFF, **120ms ON** (Total: 0.40s) | Ultrasonic sonar clearance drops below safe limit ($d \le 15\text{ cm}$) |
+| **Emergency Stop / Trapped** | Solid Warning Tone | **1 beep** | **300ms to 400ms solid ON** | Driver hits Emergency STOP or autonomous car is boxed in with no escape |
+| **System Boot / Ready** | Ascending Arpeggio | **3 beeps** | **60ms ON**, 40ms OFF, **70ms ON**, 40ms OFF, **120ms ON** (Total: 0.33s) | `app.py` completes boot and vehicle telemetry server is online |
+| **Self-Test 100% Pass** | Confirmation Chime | **2 beeps** | **100ms ON**, 70ms OFF, **220ms ON** (Total: 0.39s) | Diagnostic check completes with all 9 subsystems PASS (synced with Green LED) |
+| **Manual Tactical Horn** | Honk Pulse / Continuous | **1 beep** (or held) | **250ms ON** (pulse), or stays ON while button is pressed | Driver taps or holds tactile `HORN` button in Flutter cockpit |
+
 
 ### 24.1 Root Cause Analysis of Map Blank/Coordinate Bug
 * **Slippy Tile Network Isolation**: When the companion phone connects to the vehicle's onboard Wi-Fi hotspot (`10.78.252.31`), there is no cellular or WAN gateway uplink.

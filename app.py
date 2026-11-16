@@ -237,8 +237,20 @@ def _ai_perception_worker():
                 latest_ai_plan = plan
                 last_ai_update_time = now
 
-                # Debounced pothole recording: log at most once per 2 seconds to eliminate duplicate spam
-                if scaled_detections and (now - last_pothole_log_time >= 2.0):
+                # Intelligent pothole acoustic alerting & snapshot recording:
+                # If vehicle is actively moving (manual drive or autonomous cruise), debounce window is 2.0s
+                # If vehicle is stationary (idle/bench testing), debounce is 15.0s to prevent repetitive spurious buzzes
+                is_vehicle_moving = False
+                try:
+                    is_vehicle_moving = bool(is_drive_engaged or (motor and motor.is_driving) or (auto_driver and auto_driver.is_active))
+                except Exception:
+                    is_vehicle_moving = is_drive_engaged
+
+                debounce_window = 2.0 if is_vehicle_moving else 15.0
+                min_buzzer_conf = 0.35 if is_vehicle_moving else 0.50
+                confident_detections = [d for d in scaled_detections if float(d.get("confidence", 0.0)) >= min_buzzer_conf]
+
+                if confident_detections and (now - last_pothole_log_time >= debounce_window):
                     last_pothole_log_time = now
                     try:
                         buzzer.pothole_alert()

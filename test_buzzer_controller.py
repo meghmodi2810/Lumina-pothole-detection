@@ -10,8 +10,8 @@ from buzzer_controller import BuzzerController
 
 class TestBuzzerController(unittest.TestCase):
     def setUp(self):
-        # Force simulation mode for deterministic test execution
-        self.buzzer = BuzzerController(pin=21, is_simulation=True)
+        # Force simulation mode for deterministic test execution on GPIO 2 (Pin 3)
+        self.buzzer = BuzzerController(pin=2, is_simulation=True)
 
     def tearDown(self):
         self.buzzer.cleanup()
@@ -20,11 +20,11 @@ class TestBuzzerController(unittest.TestCase):
         """Validates pin mapping, initial state, and status structure."""
         status = self.buzzer.get_status()
         self.assertEqual(status["subsystem"], "BUZZER")
-        self.assertEqual(status["pin"], 21)
+        self.assertEqual(status["pin"], 2)
         self.assertTrue(status["isSimulation"])
         self.assertFalse(status["isActive"])
         self.assertIn("wiring", status)
-        self.assertEqual(status["wiring"]["base"], "Resistor to GPIO 21 (Physical Pin 40)")
+        self.assertEqual(status["wiring"]["base"], "Resistor to GPIO 2 (Physical Pin 3)")
 
     def test_non_blocking_execution(self):
         """Verifies that scheduling patterns returns instantaneously (< 15ms) to preserve FPS."""
