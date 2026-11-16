@@ -205,5 +205,36 @@ class TestAutonomousDriver(unittest.TestCase):
         self.assertEqual(self.driver.state, AutonomousState.CRUISING)
         self.assertEqual(self.driver.consecutive_sensor_fails, 0)
 
+    def test_evasion_hold_hysteresis_sustained_steering(self):
+        """Verifies driver sustains evasion steering through transient plan dropout."""
+        plans = [
+            {"evasion_mode": "EVADE_RIGHT", "target_steering": 0.85, "throttle": 60},
+            {"evasion_mode": "CENTER_TRACKING", "target_steering": 0.0, "throttle": 80}
+        ]
+        plan_idx = 0
+        def dynamic_plan():
+            nonlocal plan_idx
+            p = plans[min(plan_idx, len(plans) - 1)]
+            plan_idx += 1
+            return p
+
+        driver = AutonomousDriver(
+            motor_controller=self.motor,
+            plan_provider=dynamic_plan,
+            cruise_speed=80.0,
+            is_simulation=True
+        )
+        driver._sim_distance = 60.0
+        driver.start()
+        time.sleep(0.12)  # Tick 1: triggers evasion (hold set for +0.40s)
+        time.sleep(0.12)  # Tick 2: plan returns CENTER_TRACKING, but hold is active
+        driver.stop()
+
+        # Check all set_drive_command calls
+        cmd_calls = [c for c in self.motor.calls if c[0] == "set_drive_command"]
+        self.assertGreater(len(cmd_calls), 1)
+        # Latest call before stop should still have held evasive steering (> 0.0)
+        self.assertGreater(cmd_calls[-1][1][0], 0.0)
+
 if __name__ == "__main__":
     unittest.main()

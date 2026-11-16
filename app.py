@@ -116,6 +116,12 @@ class VideoCamera:
                         print(f"[Camera] Physical camera unavailable ({e}), falling back to simulated driving stream.")
                         self.mode = "simulation"
                         self.cap = cv2.VideoCapture(self.sim_video_path)
+                    else:
+                        try:
+                            # Drop buffered frames to prevent stale perception lag
+                            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                        except Exception:
+                            pass
             else:
                 self.cap = cv2.VideoCapture(self.sim_video_path)
             self.is_running = True
@@ -273,7 +279,7 @@ def _ai_perception_worker():
                     total_potholes_count += len([d for d in scaled_detections if float(d.get("confidence", 0.8)) >= 0.25])
         except Exception as e:
             logger.error(f"[AI Perception] Worker exception: {e}")
-        time.sleep(0.08)
+        time.sleep(0.005)
 
 threading.Thread(target=_ai_perception_worker, daemon=True).start()
 

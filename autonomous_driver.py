@@ -100,6 +100,12 @@ class AutonomousDriver:
         self.turn_history = []
         self._recent_distances = deque(maxlen=3)
 
+        # Vision-guided evasion persistence & hold hysteresis (prevents single-frame twitching)
+        self.active_evasion_hold_until = 0.0
+        self.active_evasion_steer = 0.0
+        self.active_evasion_throttle = 0.0
+        self.min_evasion_hold_sec = 0.40  # Minimum 400ms sustained evasion maneuver
+
         self._gpio_initialized = False
         self._init_gpio()
 
@@ -252,6 +258,7 @@ class AutonomousDriver:
         with self._lock:
             self.is_active = False
             self.state = state
+            self.active_evasion_hold_until = 0.0
             if self.motor:
                 try:
                     self.motor.stop()
@@ -335,6 +342,7 @@ class AutonomousDriver:
                 # -------------------------------------------------------------
                 if self.state == AutonomousState.CRUISING:
                     if current_dist > self.stop_dist_cm:
+                        now = time.time()
                         # 1. Query AI vision model & path planner for road hazard routing
                         ai_plan = self.plan_provider() if callable(self.plan_provider) else {}
                         evasion_mode = ai_plan.get("evasion_mode", "CENTER_TRACKING")
@@ -343,16 +351,31 @@ class AutonomousDriver:
                             logger.info("[Vision Hazard] Lane-spanning crater detected! Stopping to calculate alternative path.")
                             self.motor.stop()
                             self.state = AutonomousState.OBSTACLE_STOP
+                            self.active_evasion_hold_until = 0.0
                             time.sleep(0.1)
                         elif evasion_mode in ("EVADE_LEFT", "EVADE_RIGHT"):
                             # Take real-time steering directive directly from YOLOv8 path planning model
                             steer = float(ai_plan.get("target_steering", ai_plan.get("steering", 0.0)))
-                            throttle_norm = self.cruise_speed / 100.0
-                            logger.info(f"[Vision Evasion] Active model steering around pothole: {evasion_mode} (steer={steer:+.2f}, throttle={throttle_norm:.2f})")
+                            # Obey path planner modulated throttle (default 75% of cruise speed during evasion)
+                            plan_throttle = ai_plan.get("throttle")
+                            if plan_throttle is not None and float(plan_throttle) > 0:
+                                throttle_norm = max(0.40, min(1.0, float(plan_throttle) / 100.0))
+                            else:
+                                throttle_norm = max(0.40, (self.cruise_speed * 0.75) / 100.0)
+
+                            self.active_evasion_steer = steer
+                            self.active_evasion_throttle = throttle_norm
+                            self.active_evasion_hold_until = now + self.min_evasion_hold_sec
+
+                            logger.info(f"[Vision Evasion] Active model steering around pothole: {evasion_mode} (steer={steer:+.2f}, throttle={throttle_norm:.2f}, hold={self.min_evasion_hold_sec:.2f}s)")
                             self.motor.set_drive_command(steer, throttle_norm)
                             time.sleep(0.06)
+                        elif now < self.active_evasion_hold_until:
+                            # Hysteresis Hold: Maintain active evasion trajectory even if detection flickered for 1-2 frames
+                            self.motor.set_drive_command(self.active_evasion_steer, self.active_evasion_throttle)
+                            time.sleep(0.06)
                         else:
-                            # Path is clear: drive straight ahead
+                            # Path is clear and hold window expired: drive straight ahead
                             self.motor.set_drive_command(0.0, self.cruise_speed / 100.0)
                             time.sleep(0.06)
 

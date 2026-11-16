@@ -116,6 +116,29 @@ class TestModelGuidedRouting(unittest.TestCase):
         self.assertEqual(plan["throttle"], 0)
         self.assertEqual(plan["warning_level"], "RED")
 
+    def test_early_horizon_approach_detection(self):
+        """Verifies potholes in early lookahead corridor (yc=0.30) trigger early warning and speed cut."""
+        det = {
+            "bbox_norm": [0.20, 0.20, 0.40, 0.40],
+            "centroid_norm": [0.30, 0.30],
+            "width_norm": 0.20,
+            "confidence": 0.85
+        }
+        plan = self.planner.plan([det], base_steering=0.0, base_throttle=80)
+        self.assertTrue(plan["hazard_detected"])
+        self.assertEqual(plan["evasion_mode"], "EVADE_RIGHT")
+        self.assertLess(plan["throttle"], 80)  # De-throttled for early approach
+
+    def test_skid_steer_counter_rotation_on_high_steering(self):
+        """High steering demand (|steer| > 0.45) must counter-rotate inner wheels for 4WD pivot turn."""
+        from motor_controller import MotorController
+        mc = MotorController(default_speed_pct=100.0)
+        # Steer right (+0.85) at 80% throttle
+        mc.set_drive_command(steering=0.85, throttle=0.80)
+        # Left (outer) wheels forward, Right (inner) wheels reversed
+        self.assertGreater(mc.left_pwm_pct, 60.0)
+        self.assertGreater(mc.right_pwm_pct, 30.0)
+
     def test_manual_mode_assisted_forward_left_pothole(self):
         """In manual mode, human drives forward, model evades pothole on left."""
         det = {

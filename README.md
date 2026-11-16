@@ -128,12 +128,13 @@ Solves the legacy "fragmented box" failure where a single pothole is broken into
 ### 3.4 Avoidance Arbitrator Policy
 Implemented in `path_planner.py` following Section 4.3 of the PRD:
 
-| Condition | Centroid ($X_c, Y_c$) | Action | Steering ($\Delta\theta$) | Throttle | AR Corridor Color |
+| Condition | Centroid ($X_c, Y_c$) | Action | Steering ($\Delta\theta$) | Throttle Modulation | AR Corridor Color |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Clear Road** | No hazards in zone | `CENTER_TRACKING` | `0.00` | `45%` | Emerald Green |
-| **Hazard on Left** | $X_c < 0.50$, $Y_c \ge 0.45$ | `EVADE_RIGHT` | `+0.35` (Veer right) | `31%` | Amber Warning |
-| **Hazard on Right** | $X_c \ge 0.50$, $Y_c \ge 0.45$ | `EVADE_LEFT` | `-0.35` (Veer left) | `31%` | Amber Warning |
-| **Lane Blockage** | Both sides blocked or $W > 0.55$ | `EMERGENCY_BRAKE` | `0.00` | `0%` | Crimson Red |
+| **Clear Road** | No hazards in corridor | `CENTER_TRACKING` | `0.00` | `80%` Base Cruise | Emerald Green |
+| **Approaching Horizon** | $0.20 \le Y_c < 0.45$ (Corridor) | `EVADE_RIGHT` / `EVADE_LEFT` | `+0.50` / `-0.50` (Proactive bias) | `75%` Lookahead cut | Amber Warning |
+| **Immediate Hazard Left** | $X_c < 0.50$, $Y_c \ge 0.45$ | `EVADE_RIGHT` | `+0.85` (Assertive veer) | `75%` Evasion throttle | Amber Warning |
+| **Immediate Hazard Right** | $X_c \ge 0.50$, $Y_c \ge 0.45$ | `EVADE_LEFT` | `-0.85` (Assertive veer) | `75%` Evasion throttle | Amber Warning |
+| **Lane Blockage** | Both sides blocked or $W > 0.85$ | `EMERGENCY_BRAKE` | `0.00` | `0%` Emergency Halt | Crimson Red |
 
 ---
 
@@ -343,6 +344,12 @@ For full documentation on the physical edge car architecture, see [AUTONOMOUS_HA
 - **Persistent Real Missions Archive**: Complete JSON serialization and deserialization for Trips, RoutePoints, and PotholeObservations backed by device storage (`SharedPreferences`). Removed fake mock seed trips; real missions are logged with duration, distance, velocity, battery drain, and pothole links, with 1-tap GeoJSON/JSON export and trip deletion capabilities.
 - **Cockpit Safety Unblocking**: Relocated pothole detection notifications from the lower steering zone (`bottom: 16`) to the top HUD (`top: 52` / `top: 48`) with 5-second auto-dismissal, ensuring manual steering buttons (D-Pad, Virtual Joystick, WASD) remain 100% accessible and unhindered during driving.
 - **Orientation Lag & Freeze Elimination**: Replaced quadratic memory scanning in MJPEG chunk receiver with windowed byte-boundary scanning and static frame caching, eliminating main-isolate thread lockup and blackouts when rotating between landscape and portrait.
+
+### 8.12 Autonomous Steering Authority & Perception Latency Overhaul
+- **Early Lookahead Horizon Expansion**: Lowered the PathPlanner reaction threshold from `0.45` to `0.20`. Hazards are recognized 1.5–2.5 meters ahead, triggering early lookahead deceleration to double available reaction time.
+- **Skid-Steer Counter-Rotating Pivot Drive**: Overhauled `motor_controller.py` differential drive to eliminate 4WD tire scrub. For steering demand $|\text{steering}| > 0.45$, inner wheels actively counter-rotate (reverse) while outer wheels drive forward, producing sharp, high-torque yaw deflection.
+- **Evasion Hold Hysteresis**: Added `min_evasion_hold_sec = 0.40` in `autonomous_driver.py` so that once an evasion is triggered, the trajectory is held for a minimum of 400ms through transient frame drops or camera angle changes, preventing twitch-steering.
+- **Zero-Latency Video Queue & Worker Optimization**: Added `cv2.CAP_PROP_BUFFERSIZE = 1` and trimmed perception loop sleep to `0.005s` in `app.py`, eliminating frame queue lag so steering commands act on instantaneous real-time video.
 
 ### 8.3 Automated Verification & Soak Testing Suite
 Comprehensive automated testing is provided in `tests/`:

@@ -321,24 +321,72 @@ class MotorController:
             was_stopped = not self.is_driving
             self.is_driving = True
 
-            # Calibrated differential drive speed based on throttle with assertive skid-steer bias
-            base_speed = max(65.0, min(100.0, abs(throttle) * 100.0))
-            if steering >= 0:
-                # Steer Right: Outer (Left) wheels drive, Inner (Right) wheels slow down aggressively
-                left_speed = base_speed
-                right_speed = max(20.0, base_speed * (1.0 - 1.50 * steering))
-            else:
-                # Steer Left: Outer (Right) wheels drive, Inner (Left) wheels slow down aggressively
-                left_speed = max(20.0, base_speed * (1.0 - 1.50 * abs(steering)))
-                right_speed = base_speed
-
+            # Calibrated differential drive speed based on throttle
+            base_speed = max(45.0, min(100.0, abs(throttle) * 100.0))
+            abs_steer = abs(steering)
             is_forward = throttle >= 0
-            if is_forward:
-                self.current_action = "forward"
-                self._apply_raw_outputs(1, 0, 1, 0, left_speed, right_speed, was_stopped=was_stopped)
+
+            if abs_steer <= 0.05:
+                # Pure straight driving: both motor banks matched
+                left_speed = base_speed
+                right_speed = base_speed
+                in1, in2 = (1, 0) if is_forward else (0, 1)
+                in3, in4 = (1, 0) if is_forward else (0, 1)
+            elif abs_steer <= 0.45:
+                # Moderate steering: Outer wheels drive at base speed, inner wheels decelerate smoothly towards 0
+                turn_ratio = (0.45 - abs_steer) / 0.45  # 1.0 down to 0.0
+                outer_speed = base_speed
+                inner_speed = max(0.0, base_speed * turn_ratio)
+
+                if steering > 0:
+                    # Steer Right: Left=Outer (Forward), Right=Inner (Slow Forward)
+                    left_speed = outer_speed
+                    right_speed = inner_speed
+                else:
+                    # Steer Left: Right=Outer (Forward), Left=Inner (Slow Forward)
+                    left_speed = inner_speed
+                    right_speed = outer_speed
+
+                in1, in2 = (1, 0) if is_forward else (0, 1)
+                in3, in4 = (1, 0) if is_forward else (0, 1)
             else:
-                self.current_action = "backward"
-                self._apply_raw_outputs(0, 1, 0, 1, left_speed, right_speed, was_stopped=was_stopped)
+                # Aggressive / Evasive steering (abs_steer > 0.45):
+                # On 4WD skid-steer chassis, inner wheels MUST reverse (counter-rotate)
+                # to overcome tire scrub friction and pivot the chassis away from the obstacle!
+                pivot_intensity = min(1.0, (abs_steer - 0.45) / 0.55)  # 0.0 to 1.0
+                outer_speed = min(100.0, max(base_speed, 70.0))
+                # Counter-rotating reverse speed for inner wheels to break stiction
+                inner_reverse_speed = max(35.0, base_speed * (0.40 + 0.60 * pivot_intensity))
+
+                if is_forward:
+                    if steering > 0:
+                        # Steer Right: Left wheels forward (1, 0), Right wheels reverse (0, 1)
+                        left_speed = outer_speed
+                        right_speed = inner_reverse_speed
+                        in1, in2 = (1, 0)
+                        in3, in4 = (0, 1)
+                    else:
+                        # Steer Left: Left wheels reverse (0, 1), Right wheels forward (1, 0)
+                        left_speed = inner_reverse_speed
+                        right_speed = outer_speed
+                        in1, in2 = (0, 1)
+                        in3, in4 = (1, 0)
+                else:
+                    if steering > 0:
+                        # Reverse & Steer Right
+                        left_speed = outer_speed
+                        right_speed = inner_reverse_speed
+                        in1, in2 = (0, 1)
+                        in3, in4 = (1, 0)
+                    else:
+                        # Reverse & Steer Left
+                        left_speed = inner_reverse_speed
+                        right_speed = outer_speed
+                        in1, in2 = (1, 0)
+                        in3, in4 = (0, 1)
+
+            self.current_action = "forward" if is_forward else "backward"
+            self._apply_raw_outputs(in1, in2, in3, in4, left_speed, right_speed, was_stopped=was_stopped)
 
     def _apply_raw_outputs(self, in1_val, in2_val, in3_val, in4_val, left_speed, right_speed, was_stopped=False):
         # Apply motor trim multipliers to calibrate Left/Right motor power differences

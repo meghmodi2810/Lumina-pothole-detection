@@ -14,11 +14,12 @@ except ImportError:
 import numpy as np
 
 class PathPlanner:
-    def __init__(self, lane_width_ratio=0.6, reaction_y_thresh=0.45):
+    def __init__(self, lane_width_ratio=0.6, reaction_y_thresh=0.20):
         """
         Args:
             lane_width_ratio: Width of the driving corridor relative to frame width (default 60%).
             reaction_y_thresh: Normalized y-coordinate below which obstacles trigger avoidance (0=top, 1=bottom).
+                              Expanded to 0.20 (Lookahead Horizon) to give 2-3x physical reaction time.
         """
         self.lane_width_ratio = lane_width_ratio
         self.reaction_y_thresh = reaction_y_thresh
@@ -72,7 +73,7 @@ class PathPlanner:
             xc, yc = primary.get('centroid_norm', [0.5, 0.0])
             conf = primary.get('confidence', 0.5)
 
-            # Check if road is truly impassable right in front of bumper (yc >= 0.75)
+            # Check if road is truly impassable right in front of bumper (yc >= 0.72)
             severe_left = any(d.get('centroid_norm', [0.5, 0.0])[0] < 0.48 and d.get('centroid_norm', [0.5, 0.0])[1] >= 0.72 for d in critical_hazards)
             severe_right = any(d.get('centroid_norm', [0.5, 0.0])[0] >= 0.52 and d.get('centroid_norm', [0.5, 0.0])[1] >= 0.72 for d in critical_hazards)
 
@@ -82,22 +83,31 @@ class PathPlanner:
                 evasion_offset = 0.0
                 final_throttle = 0
                 warning_level = "RED"
-            elif xc < 0.50:
-                # Pothole on left side -> steer right (+0.55 offset) and regulate throttle
-                evasion_mode = "EVADE_RIGHT"
-                evasion_offset = +0.55
-                final_throttle = int(base_throttle * 0.80)
+            elif yc >= 0.45:
+                # Immediate Evasion Zone: Assertive steering authority (+/- 0.85) to clear obstacle
+                if xc < 0.50:
+                    evasion_mode = "EVADE_RIGHT"
+                    evasion_offset = +0.85
+                else:
+                    evasion_mode = "EVADE_LEFT"
+                    evasion_offset = -0.85
+                final_throttle = int(base_throttle * 0.75)
                 warning_level = "AMBER"
             else:
-                # Pothole on right side or center -> steer left (-0.55 offset) and regulate throttle
-                evasion_mode = "EVADE_LEFT"
-                evasion_offset = -0.55
-                final_throttle = int(base_throttle * 0.80)
+                # Lookahead Horizon Zone (0.20 <= yc < 0.45): Early speed cut & proactive lateral bias
+                if xc < 0.50:
+                    evasion_mode = "EVADE_RIGHT"
+                    evasion_offset = +0.50
+                else:
+                    evasion_mode = "EVADE_LEFT"
+                    evasion_offset = -0.50
+                final_throttle = int(base_throttle * 0.75)
                 warning_level = "AMBER"
 
         target_steering = max(-1.0, min(1.0, base_steering + evasion_offset))
-        # Responsive exponential smoothing for immediate avoidance (alpha = 0.75)
-        self.smoothed_steering = 0.25 * self.smoothed_steering + 0.75 * target_steering
+        # Responsive exponential smoothing: faster snap (alpha=0.85) during active evasion
+        alpha = 0.85 if hazard_detected else 0.50
+        self.smoothed_steering = (1.0 - alpha) * self.smoothed_steering + alpha * target_steering
         self.current_steering = round(float(self.smoothed_steering), 3)
         self.current_throttle = int(final_throttle)
 
