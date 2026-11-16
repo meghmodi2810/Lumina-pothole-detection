@@ -337,6 +337,12 @@ For full documentation on the physical edge car architecture, see [AUTONOMOUS_HA
 - **Telemetry Link Hardening**: Eliminated overlapping polling and increased request timeout to 3000ms with a 5.0-second silence threshold in `vehicle_live_source.dart`, resolving frequent 5-second disconnect alerts over Wi-Fi hotspot.
 - **Model-Based Autonomous Pothole Evasion**: Integrated real-time YOLOv8 `PathPlanner` steering offsets ($\pm 0.55$) with skid-steer differential drive curves ($1.50 \times \text{steering}$) in `autonomous_driver.py`, allowing the car to actively steer around detected potholes at 80% cruise speed and automatically straighten out once cleared.
 
+### 8.11 Real Slippy Cartography, Persistent Missions & Cockpit Control Unblocking
+- **Real Slippy Map Tile Cartography (`RealMapTileView`)**: Replaced placeholder vector grid with high-performance Web Mercator raster tiles from CartoDB Dark Matter and OpenStreetMap. Features interactive pan/drag with inertia, multi-level zoom (12x–18x), live vehicle location marker with heading needle and pulsing radar ring, GPS route breadcrumbs, severity-coded pothole markers, and zero-bandwidth offline fallback.
+- **Persistent Real Missions Archive**: Complete JSON serialization and deserialization for Trips, RoutePoints, and PotholeObservations backed by device storage (`SharedPreferences`). Removed fake mock seed trips; real missions are logged with duration, distance, velocity, battery drain, and pothole links, with 1-tap GeoJSON/JSON export and trip deletion capabilities.
+- **Cockpit Safety Unblocking**: Relocated pothole detection notifications from the lower steering zone (`bottom: 16`) to the top HUD (`top: 52` / `top: 48`) with 5-second auto-dismissal, ensuring manual steering buttons (D-Pad, Virtual Joystick, WASD) remain 100% accessible and unhindered during driving.
+- **Orientation Lag & Freeze Elimination**: Replaced quadratic memory scanning in MJPEG chunk receiver with windowed byte-boundary scanning and static frame caching, eliminating main-isolate thread lockup and blackouts when rotating between landscape and portrait.
+
 ### 8.3 Automated Verification & Soak Testing Suite
 Comprehensive automated testing is provided in `tests/`:
 - `python tests/test_physical_hardware.py`: Runs 7/7 physical sensor, bus, and GPIO diagnostics on the Pi.
