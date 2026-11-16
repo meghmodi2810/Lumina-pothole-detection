@@ -27,7 +27,7 @@ logger = logging.getLogger("BuzzerController")
 if not logger.handlers:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] [Buzzer] %(message)s")
 
-DEFAULT_BUZZER_PIN = 2  # BCM 2 (Physical Pin 3 on RPi 40-Pin Header)
+DEFAULT_BUZZER_PIN = int(os.environ.get("LUMINA_BUZZER_PIN", 21))  # BCM 21 (Physical Pin 40 on RPi 40-Pin Header)
 
 # Detect RPi.GPIO availability
 GPIO_AVAILABLE = False
@@ -67,12 +67,13 @@ class BuzzerController:
         self._start_worker()
 
     def _init_hardware_pin(self):
-        """Initializes GPIO 2 as OUTPUT and immediately forces LOW to prevent floating noise."""
+        """Initializes buzzer GPIO pin as OUTPUT and immediately forces LOW to prevent floating noise."""
         if not self.is_simulation and GPIO_AVAILABLE:
             try:
                 GPIO.setup(self.pin, GPIO.OUT, initial=GPIO.LOW)
                 GPIO.output(self.pin, GPIO.LOW)
-                logger.info(f"Initialized Buzzer on BCM GPIO {self.pin} (Pin 3) with state LOW via RPi.GPIO.")
+                pin_num = 40 if self.pin == 21 else (3 if self.pin == 2 else self.pin)
+                logger.info(f"Initialized Buzzer on BCM GPIO {self.pin} (Pin {pin_num}) with state LOW via RPi.GPIO.")
                 return
             except Exception as e:
                 logger.warning(f"RPi.GPIO setup failed for buzzer on GPIO {self.pin}: {e}")
@@ -309,10 +310,10 @@ class BuzzerController:
             "lastPattern": self.last_pattern,
             "queuePending": self._action_queue.qsize(),
             "wiring": {
-                "positive": "Raspberry Pi 5V",
+                "positive": "Raspberry Pi 5V (Pin 2 or 4)",
                 "negative": "Transistor Collector",
-                "emitter": "Ground (GND)",
-                "base": f"Resistor to GPIO {self.pin} (Pin 3)"
+                "emitter": "Ground (GND, Pin 39)",
+                "base": f"Resistor to GPIO {self.pin} (Physical Pin {40 if self.pin == 21 else (3 if self.pin == 2 else self.pin)})"
             }
         }
 

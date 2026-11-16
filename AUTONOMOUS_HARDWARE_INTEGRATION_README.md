@@ -33,7 +33,7 @@ This subsystem elevates the LUMINA robotic vehicle from a teleoperated IoT vehic
 | **HC-SR04 Trigger** | Output | **GPIO 16** | Pin 36 | 15 µs high pulse | Front distance trigger |
 | **HC-SR04 Echo** | Input | **GPIO 26** | Pin 37 | Pulse duration $\propto$ distance (via voltage divider) | Front obstacle echo |
 | **Status Green LED** | Output | **GPIO 5** | Pin 29 | 3.3V active HIGH, current-limited via 330Ω | Pass indicator |
-| **Acoustic Horn & Warning Buzzer** | Transistor Driver Output | **GPIO 2** | Pin 3 | NPN Low-Side Switch (Collector to Buzzer -ve, Base to GPIO 2 via 1kΩ) | Pothole alert, urgent collision sonar alarm, manual horn |
+| **Acoustic Horn & Warning Buzzer** | Transistor Driver Output | **GPIO 21** | Pin 40 | NPN Low-Side Switch (Collector to Buzzer -ve, Base to GPIO 21 via 1kΩ) | Pothole alert, urgent collision sonar alarm, manual horn (Default PULL-DOWN at boot, avoids I2C hardware pull-up) |
 | **Left Motors (IN1)** | Output | **GPIO 23** | Pin 16 | L298N Channel B (Physical Rear Right) | Direction Forward (Towards Camera) |
 | **Left Motors (IN2)** | Output | **GPIO 22** | Pin 15 | L298N Channel B (Physical Rear Right) | Direction Reverse (Away from Camera) |
 | **Left Speed (ENA)** | Hardware PWM | **GPIO 12** | Pin 32 | PWM Channel 0, 100 Hz duty cycle (0–100%) | Left Wheel Pair PWM Control |
@@ -1114,22 +1114,29 @@ The application installs as `XTL-DMZX9N7265.com.lumina.companion` on the device 
 ## 23. Subsystem: Acoustic Signaling, Collision Warning & Tactical Horn Engine (`buzzer_controller.py`)
 
 ### 23.1 Circuit Driver Topology & Low-Side Transistor Switching
-The acoustic warning system uses an active buzzer controlled via a low-side NPN transistor driver (e.g. 2N2222 / BC547 / S8050) connected to Raspberry Pi BCM GPIO 2 (Physical Pin 3):
+The acoustic warning system uses an active buzzer controlled via a low-side NPN transistor driver (e.g. 2N2222 / BC547 / S8050) connected to Raspberry Pi **BCM GPIO 21 (Physical Header Pin 40)**:
 
 ```
 +5V (Pin 2 / 4) ────────────► Buzzer (+) [Positive Rail]
                                     │
                               [Active Buzzer]
                                     │
-Buzzer (-) ─────────────────► Transistor Collector (Left Leg)
+Buzzer (-) ─────────────────► Transistor Collector
                                     │
-                      Transistor Base (Middle Leg) ◄─── Resistor (1kΩ) ◄─── GPIO 2 (Pin 3)
+                      Transistor Base ◄─── Resistor (1kΩ) ◄─── GPIO 21 (Pin 40) [Default PULL-DOWN]
                                     │
-Transistor Emitter (Right Leg) ─────► GND (Pin 6 / 9 / 14 / 20 / 25 / 30 / 34 / 39)
+Transistor Emitter ─────────► GND (Pin 39 - Adjacent to Pin 40)
 ```
 
-> [!NOTE]
-> **Boot Noise Mitigation on GPIO 2**: BCM GPIO 2 doubles as I2C1 SDA and has a physical 1.8kΩ pull-up resistor to 3.3V on the Raspberry Pi board. At Linux boot before software initialization, this pin can briefly float high. `BuzzerController.__init__` explicitly and immediately asserts `GPIO.setup(2, GPIO.OUT, initial=GPIO.LOW)` to prevent spurious humming or chirps at startup, and drives the pin LOW upon clean exit.
+> [!WARNING]
+> **Root Cause of Continuous Buzzing on GPIO 2 (Pin 3)**:
+> BCM GPIO 2 (Physical Pin 3) and GPIO 3 (Physical Pin 5) are dedicated hardware I2C lines (`SDA1` and `SCL1`). On all Raspberry Pi boards, **physical 1.8 kΩ pull-up resistors to 3.3V are soldered directly onto the PCB**. When an NPN transistor base is connected to Pin 3, current flows continuously from the 3.3V pull-up through the base resistor into the transistor base ($I_b \approx 0.93\text{ mA}$), turning the transistor permanently ON and causing the active buzzer to scream continuously with an unbroken tone.
+>
+> **The Solution (GPIO 21 / Pin 40)**:
+> Moving the control wire from **Pin 3 (GPIO 2)** to **Pin 40 (GPIO 21)** resolves the issue completely:
+> 1. **No Hardware Pull-Ups**: GPIO 21 has no motherboard pull-up resistors.
+> 2. **Hardware Pull-Down by Default**: The BCM2711 SoC defaults pins GPIO 9–27 to internal pull-down (0V / LOW) at cold boot and reboot. The transistor remains completely OFF and silent during boot, shutdown, and idle.
+> 3. **Pin Placement**: Pin 40 is the very corner pin on the 40-pin header, located directly adjacent to Pin 39 (GND), making field wiring trivial.
 
 ### 23.2 Non-Blocking Multi-Threaded Audio Architecture
 Acoustic pattern generation runs on a dedicated background daemon thread (`BuzzerAudioThread`) fed by a thread-safe task queue. When an alert or horn is triggered, the method returns instantaneously (< 1ms), ensuring that:
